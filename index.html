@@ -68,6 +68,7 @@ This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in
 </div>
 </div>
 <div class="actions">
+<button id="findCustomer">Find Customer by Email</button>
 <button id="fetchJobs">Fetch Jobs (daily protected)</button>
 <button id="loadQueue">Load Queue</button>
 </div>
@@ -100,6 +101,7 @@ This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in
 </div>
 
 <script>
+  
 const $ = (id) => document.getElementById(id);
 
 function setLog(obj) {
@@ -253,7 +255,26 @@ setLog(data);
 setLog({ error: "Health check failed", details: String(e) });
 }
 }
+async function findCustomer() {
+  try {
+    const email = ($("customerEmail").value || "").trim().toLowerCase();
+    if (!email) { alert("Please enter customer email"); return; }
 
+    const res = await apiGet(`/customers/search?email=${encodeURIComponent(email)}`);
+    setLog(res);
+
+    if (!res.found) {
+      alert("Customer not found. Create the customer first.");
+      return;
+    }
+
+    $("customerId").value = res.customer.id;
+    saveNow();
+    alert("Customer found. customer_id filled.");
+  } catch (e) {
+    setLog({ error: "Find customer failed", details: String(e) });
+  }
+}
 async function fetchJobs() {
 try {
 const customerId = ($("customerId").value || "").trim();
@@ -283,6 +304,8 @@ $("clearConfig").addEventListener("click", clearNow);
 $("healthCheck").addEventListener("click", healthCheck);
 $("fetchJobs").addEventListener("click", fetchJobs);
 $("loadQueue").addEventListener("click", loadQueue);
+$("findCustomer").addEventListener("click", findCustomer);
+
 
 loadSaved();
 </script>
