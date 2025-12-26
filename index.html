@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobApplyAI Workplace</title>
+<style>
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f6f7fb; color: #111; }
+.container { max-width: 1100px; margin: 0 auto; padding: 18px; }
+.card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 14px; }
+h1 { margin: 0 0 10px; font-size: 22px; }
+h2 { margin: 0 0 10px; font-size: 16px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+label { display: block; font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
+input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; }
+button { border: 1px solid #ddd; background: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 650; }
+button:hover { background: #f2f2f2; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.small { font-size: 12px; opacity: 0.75; }
+.status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; background: #0b1020; color: #e6e6e6; padding: 12px; border-radius: 12px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+th { font-size: 12px; opacity: 0.75; }
+td { font-size: 14px; }
+.badge { display: inline-block; padding: 4px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="card">
+<h1>JobApplyAI Workplace</h1>
+<div class="small">
+This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in GitHub Pages. Use the inputs below (stored in your browser localStorage).
+</div>
+</div>
+
+<div class="card">
+<h2>Configuration</h2>
+<div class="row">
+<div>
+<label>API Base URL</label>
+<input id="apiBase" placeholder="https://jobapplyai-api.schoene-viktor.workers.dev">
+</div>
+<div>
+<label>Admin Token (x-admin-token)</label>
+<input id="adminToken" placeholder="Paste token here">
+</div>
+</div>
+<div class="actions">
+<button id="saveConfig">Save Config</button>
+<button id="clearConfig">Clear</button>
+<button id="healthCheck">Health Check</button>
+</div>
+</div>
+
+<div class="card">
+<h2>Customer</h2>
+<div class="row">
+<div>
+<label>Customer ID (UUID)</label>
+<input id="customerId" placeholder="213f6290-fe25-4168-8b57-82395747f4c7">
+</div>
+<div>
+<label>Customer Email (used for Mark Applied)</label>
+<input id="customerEmail" placeholder="demo.customer+001@gmail.com">
+</div>
+</div>
+<div class="actions">
+<button id="fetchJobs">Fetch Jobs (daily protected)</button>
+<button id="loadQueue">Load Queue</button>
+</div>
+<div class="small">Fetch Jobs will return “Jobs already fetched today” if you click again on the same day.</div>
+</div>
+
+<div class="card">
+<h2>Job Queue</h2>
+<div class="small" id="queueMeta">No data loaded yet.</div>
+<div style="overflow:auto; margin-top:10px;">
+<table id="jobsTable">
+<thead>
+<tr>
+<th>Title</th>
+<th>Company</th>
+<th>Location</th>
+<th>Posted</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody id="jobsTbody"></tbody>
+</table>
+</div>
+</div>
+
+<div class="card">
+<h2>Response Log</h2>
+<div id="log" class="status">Ready.</div>
+</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function setLog(obj) {
+const text = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+$("log").textContent = text;
+}
+
+function getConfig() {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+const token = ($("adminToken").value || "").trim();
+return { apiBase, token };
+}
+
+function authHeaders(token) {
+return { "x-admin-token": token, "Content-Type": "application/json" };
+}
+
+function loadSaved() {
+const saved = JSON.parse(localStorage.getItem("jobapplyai_workplace") || "{}");
+if (saved.apiBase) $("apiBase").value = saved.apiBase;
+if (saved.token) $("adminToken").value = saved.token;
+if (saved.customerId) $("customerId").value = saved.customerId;
+if (saved.customerEmail) $("customerEmail").value = saved.customerEmail;
+}
+
+function saveNow() {
+const data = {
+apiBase: ($("apiBase").value || "").trim().replace(/\/$/, ""),
+token: ($("adminToken").value || "").trim(),
+customerId: ($("customerId").value || "").trim(),
+customerEmail: ($("customerEmail").value || "").trim()
+};
+localStorage.setItem("jobapplyai_workplace", JSON.stringify(data));
+setLog({ ok: true, message: "Saved to localStorage (only in your browser)." });
+}
+
+function clearNow() {
+localStorage.removeItem("jobapplyai_workplace");
+$("apiBase").value = "";
+$("adminToken").value = "";
+$("customerId").value = "";
+$("customerEmail").value = "";
+$("jobsTbody").innerHTML = "";
+$("queueMeta").textContent = "No data loaded yet.";
+setLog("Cleared.");
+}
+
+async function apiGet(path) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "GET", headers: authHeaders(token) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
+return data;
+}
+
+async function apiPost(path, bodyObj) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "POST", headers: authHeaders(token), body: JSON.stringify(bodyObj || {}) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
+return data;
+}
+
+function renderJobs(queue) {
+const tbody = $("jobsTbody");
+tbody.innerHTML = "";
+const jobs = (queue && queue.data) ? queue.data : [];
+$("queueMeta").textContent = `Loaded ${jobs.length} jobs. Customer: ${queue.customer_id || "-"}`;
+for (const j of jobs) {
+const tr = document.createElement("tr");
+const posted = j.posted_at ? String(j.posted_at).slice(0, 10) : "-";
+const loc = [j.city, j.country].filter(Boolean).join(", ") || "-";
+const title = j.title || "-";
+const company = j.company_name || "-";
+const applyUrl = j.apply_url || "";
+const jobId = j.id || "";
+
+tr.innerHTML = `
+<td>${escapeHtml(title)}</td>
+<td>${escapeHtml(company)}</td>
+<td>${escapeHtml(loc)}</td>
+<td><span class="badge">${escapeHtml(posted)}</span></td>
+<td></td>
+`;
+
+const tdActions = tr.querySelector("td:last-child");
+
+const openBtn = document.createElement("button");
+openBtn.textContent = "Open";
+openBtn.onclick = () => {
+if (!applyUrl) { alert("No apply_url"); return; }
+window.open(applyUrl, "_blank");
+};
+
+const markBtn = document.createElement("button");
+markBtn.textContent = "Mark Applied";
+markBtn.onclick = async () => {
+try {
+const customerEmail = ($("customerEmail").value || "").trim().toLowerCase();
+if (!customerEmail) { alert("Please enter Customer Email first."); return; }
+if (!jobId) { alert("Missing job_id in row."); return; }
+const payload = {
+email: customerEmail,
+full_name: "",
+job_id: jobId,
+status: "applied",
+applied_by: "team",
+notes: ""
+};
+const res = await apiPost("/applications/mark", payload);
+setLog(res);
+await loadQueue();
+} catch (e) {
+setLog({ error: "Mark applied failed", details: String(e) });
+}
+};
+
+tdActions.appendChild(openBtn);
+tdActions.appendChild(document.createTextNode(" "));
+tdActions.appendChild(markBtn);
+
+tbody.appendChild(tr);
+}
+}
+
+function escapeHtml(s) {
+return String(s ?? "")
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
+}
+
+async function healthCheck() {
+try {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+if (!apiBase) throw new Error("Missing API Base URL");
+const res = await fetch(apiBase + "/health");
+const data = await res.json();
+setLog(data);
+} catch (e) {
+setLog({ error: "Health check failed", details: String(e) });
+}
+}
+
+async function fetchJobs() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+const res = await apiPost(`/customers/${encodeURIComponent(customerId)}/fetch-jobs`, {});
+setLog(res);
+await loadQueue();
+} catch (e) {
+setLog({ error: "Fetch jobs failed", details: String(e) });
+}
+}
+
+async function loadQueue() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
+setLog(res);
+renderJobs(res);
+} catch (e) {
+setLog({ error: "Load queue failed", details: String(e) });
+}
+}
+
+$("saveConfig").addEventListener("click", saveNow);
+$("clearConfig").addEventListener("click", clearNow);
+$("healthCheck").addEventListener("click", healthCheck);
+$("fetchJobs").addEventListener("click", fetchJobs);
+$("loadQueue").addEventListener("click", loadQueue);
+
+loadSaved();
+</script>
+</body>
+</html>
