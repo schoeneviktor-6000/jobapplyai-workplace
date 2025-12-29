@@ -1,989 +1,250 @@
-// Cloudflare Worker: JobApplyAI API
-// Endpoints:
-// GET  /health
-// POST /customers/upsert                 (PUBLIC - for website signup)
-// POST /customer-profiles/upsert         (PUBLIC - for website profile setup)
-// POST /customer-plans/upsert            (PUBLIC - for website plan selection)
-// GET  /customers/search?email=test@example.com
-// GET  /jobs/search?country=DE&q=analyst&city=Berlin&limit=25&email=test@example.com
-// POST /ingest/ba
-// POST /customers/<customer_id>/fetch-jobs
-// GET  /customers/<customer_id>/jobs/queue
-// GET  /customers/<customer_id>/applications/summary     <-- NEW (admin)
-// GET  /jobs/de/<refnr>              (HTML by default; add ?format=json for JSON)
-// POST /applications/mark
-//
-// Cron:
-// scheduled() -> nightly BA fetch for all customers with profiles
-//
-// Required Worker Secrets/Vars (Cloudflare -> Worker -> Settings -> Variables):
-// SUPABASE_URL (Text)
-// SUPABASE_SERVICE_ROLE_KEY (Secret)  -> sb_secret_... from Supabase
-// BA_API_KEY (Text) -> "jobboerse-jobsuche"
-// WORKER_ADMIN_TOKEN (Secret)         -> any strong random string
-//
-// Optional vars:
-// CRON_ENABLED (Text) "true" | "false"
-// CRON_MAX_CUSTOMERS (Text) default 200
-
-export default {
-async fetch(request, env) {
-const url = new URL(request.url);
-
-// 1) Handle CORS preflight
-if (request.method === "OPTIONS") {
-return new Response(null, { status: 204, headers: corsHeaders(request) });
-}
-
-try {
-if (url.pathname === "/health" && request.method === "GET") {
-return json(request, { ok: true, service: "jobapplyai-api" }, 200);
-}
-
-// PUBLIC (for website signup)
-if (url.pathname === "/customers/upsert" && request.method === "POST") {
-return await handleCustomerUpsertPublic(request, env);
-}
-
-// PUBLIC (for website profile setup)
-if (url.pathname === "/customer-profiles/upsert" && request.method === "POST") {
-return await handleCustomerProfileUpsertPublic(request, env);
-}
-
-// PUBLIC (for website plan selection)
-if (url.pathname === "/customer-plans/upsert" && request.method === "POST") {
-return await handleCustomerPlanUpsertPublic(request, env);
-}
-
-// ADMIN-protected
-if (url.pathname === "/customers/search" && request.method === "GET") {
-return await handleCustomerSearch(request, url, env);
-}
-
-if (url.pathname === "/jobs/search" && request.method === "GET") {
-return await handleJobSearch(url, env, request);
-}
-
-if (request.method === "GET" && /^\/customers\/[0-9a-fA-F-]{36}\/jobs\/queue$/.test(url.pathname)) {
-return await handleCustomerJobQueue(request, url, env);
-}
-
-// NEW: admin summary endpoint
-if (request.method === "GET" && /^\/customers\/[0-9a-fA-F-]{36}\/applications\/summary$/.test(url.pathname)) {
-return await handleCustomerApplicationsSummary(request, url, env);
-}
-
-if (request.method === "POST" && /^\/customers\/[0-9a-fA-F-]{36}\/fetch-jobs$/.test(url.pathname)) {
-return await handleFetchJobsForCustomer(request, url, env);
-}
-
-if (url.pathname === "/ingest/ba" && request.method === "POST") {
-return await handleIngestBA(request, env);
-}
-
-if (url.pathname.startsWith("/jobs/de/") && request.method === "GET") {
-return await handleDEJobDetails(url, env, request);
-}
-
-if (url.pathname === "/applications/mark" && request.method === "POST") {
-return await handleMarkApplication(request, env);
-}
-
-return json(request, { error: "Not found" }, 404);
-} catch (err) {
-return json(request, { error: "Unhandled error", details: String(err) }, 500);
-}
-},
-
-async scheduled(event, env, ctx) {
-if ((env.CRON_ENABLED || "true").toLowerCase() !== "true") return;
-ctx.waitUntil(runNightlyCron(env));
-},
-};
-
-/* -----------------------------
-CORS
------------------------------ */
-
-function corsHeaders(request) {
-const allowedOrigin = "https://schoeneviktor-6000.github.io";
-let origin = "";
-try {
-origin = request?.headers?.get("Origin") || "";
-} catch {
-origin = "";
-}
-const allowOrigin = origin === allowedOrigin ? allowedOrigin : allowedOrigin;
-
-return {
-"Access-Control-Allow-Origin": allowOrigin,
-"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-"Access-Control-Allow-Headers": "Content-Type, Authorization, x-admin-token",
-"Access-Control-Max-Age": "86400",
-"Vary": "Origin",
-};
-}
-
-function json(request, body, status = 200) {
-let headers = { "Content-Type": "application/json" };
-try {
-headers = { ...headers, ...corsHeaders(request) };
-} catch {
-headers = { ...headers, "Access-Control-Allow-Origin": "https://schoeneviktor-6000.github.io" };
-}
-return new Response(JSON.stringify(body), { status, headers });
-}
-
-function mustEnv(env, name) {
-const v = (env[name] || "").trim();
-if (!v) throw new Error(`Missing env var/secret: ${name}`);
-return v;
-}
-
-function escapeForPostgrestLike(s) {
-return s
-.replace(/[()*]/g, "")
-.replace(/%/g, "")
-.replace(/\s+/g, " ")
-.trim()
-.slice(0, 80);
-}
-
-function normalizeTitle(title) {
-if (!title) return "";
-return title
-.toLowerCase()
-.replace(/\(m\/w\/d\)/g, "")
-.replace(/\(w\/m\/d\)/g, "")
-.replace(/\(m\/f\/d\)/g, "")
-.replace(/\[.*?\]/g, "")
-.replace(/\s+/g, " ")
-.trim()
-.slice(0, 200);
-}
-
-async function sha256Hex(input) {
-const data = new TextEncoder().encode(input);
-const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-const hashArray = Array.from(new Uint8Array(hashBuffer));
-return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function isAdminAuthorized(request, env) {
-const adminToken = (env.WORKER_ADMIN_TOKEN || "").trim();
-if (!adminToken) return false;
-
-const incomingX = (request.headers.get("x-admin-token") || "").trim();
-if (incomingX && incomingX === adminToken) return true;
-
-const auth = (request.headers.get("Authorization") || "").trim();
-if (auth && auth === `Bearer ${adminToken}`) return true;
-
-return false;
-}
-
-function looksLikeUuid(s) {
-return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(s);
-}
-
-function looksLikeEmail(s) {
-if (!s) return false;
-const v = String(s).trim();
-if (v.length < 5 || v.length > 200) return false;
-return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-}
-
-/* -----------------------------
-Profile input helpers (PUBLIC)
------------------------------ */
-
-function normStringArray(v, { maxItems = 30, maxLen = 120 } = {}) {
-const arr = Array.isArray(v) ? v : [];
-const out = [];
-for (const item of arr) {
-const s = String(item || "").trim();
-if (!s) continue;
-out.push(s.slice(0, maxLen));
-if (out.length >= maxItems) break;
-}
-return out;
-}
-
-function normRadiusKm(v) {
-if (v === null || v === undefined || v === "") return null;
-const n = Number(v);
-if (!Number.isFinite(n)) return null;
-if (n < 0) return 0;
-if (n > 500) return 500;
-return Math.round(n);
-}
-
-/* -----------------------------
-Supabase REST helpers
------------------------------ */
-
-async function supabaseFetch(env, path, { method = "GET", body = null, headers = {} } = {}) {
-const supabaseUrl = mustEnv(env, "SUPABASE_URL").replace(/\/$/, "");
-const serviceKey = mustEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
-
-const res = await fetch(`${supabaseUrl}${path}`, {
-method,
-headers: {
-apikey: serviceKey,
-Authorization: `Bearer ${serviceKey}`,
-"Content-Type": "application/json",
-...headers,
-},
-body: body ? JSON.stringify(body) : null,
-});
-
-const text = await res.text();
-if (!res.ok) throw new Error(`Supabase error ${res.status}: ${text}`);
-return text ? JSON.parse(text) : null;
-}
-
-async function enqueueJobsForCustomer(env, customerId, jobIds, appliedBy = "system") {
-if (!jobIds.length) return 0;
-
-const rows = jobIds.map((jobId) => ({
-customer_id: customerId,
-job_id: jobId,
-status: "new",
-applied_by: appliedBy,
-created_at: new Date().toISOString(),
-updated_at: new Date().toISOString(),
-}));
-
-await supabaseFetch(env, `/rest/v1/applications?on_conflict=customer_id,job_id`, {
-method: "POST",
-body: rows,
-headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
-});
-
-return rows.length;
-}
-
-async function getSourceId(env, name, country) {
-const q = new URLSearchParams();
-q.set("select", "id");
-q.set("name", `eq.${name}`);
-q.set("country", `eq.${country}`);
-const data = await supabaseFetch(env, `/rest/v1/sources?${q.toString()}`, { method: "GET" });
-if (!Array.isArray(data) || data.length === 0) throw new Error(`Source not found in DB: ${name} ${country}`);
-return data[0].id;
-}
-
-async function upsertRawJobs(env, rows) {
-if (!rows.length) return 0;
-await supabaseFetch(env, `/rest/v1/raw_jobs?on_conflict=source_id,external_job_id`, {
-method: "POST",
-body: rows,
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-return rows.length;
-}
-
-async function upsertNormalizedJobs(env, rows) {
-if (!rows.length) return 0;
-await supabaseFetch(env, `/rest/v1/jobs_normalized?on_conflict=source_id,external_job_id`, {
-method: "POST",
-body: rows,
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-return rows.length;
-}
-
-/* -----------------------------
-PUBLIC: POST /customers/upsert
------------------------------ */
-
-async function handleCustomerUpsertPublic(request, env) {
-let body = null;
-try {
-body = await request.json();
-} catch {
-return json(request, { error: "Invalid JSON body" }, 400);
-}
-
-const email = (body?.email || "").toString().trim().toLowerCase();
-if (!looksLikeEmail(email)) {
-return json(request, { error: "Valid email is required" }, 400);
-}
-
-await supabaseFetch(env, `/rest/v1/customers?on_conflict=email`, {
-method: "POST",
-body: [{ email, full_name: null }],
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-
-const qCust = new URLSearchParams();
-qCust.set("select", "id,email,created_at");
-qCust.set("email", `eq.${email}`);
-qCust.set("limit", "1");
-
-const customers = await supabaseFetch(env, `/rest/v1/customers?${qCust.toString()}`, { method: "GET" });
-if (!Array.isArray(customers) || customers.length === 0) {
-return json(request, { error: "Customer lookup failed after upsert", email }, 500);
-}
-
-const c = customers[0];
-return json(request, { ok: true, email: c.email, customer_id: c.id, created_at: c.created_at }, 200);
-}
-
-/* -----------------------------
-PUBLIC: POST /customer-profiles/upsert
------------------------------ */
-
-async function handleCustomerProfileUpsertPublic(request, env) {
-let body = null;
-try {
-body = await request.json();
-} catch {
-return json(request, { error: "Invalid JSON body" }, 400);
-}
-
-const customer_id = (body?.customer_id || "").toString().trim();
-if (!looksLikeUuid(customer_id)) {
-return json(request, { error: "Valid customer_id (uuid) is required" }, 400);
-}
-
-const desired_titles = normStringArray(body?.desired_titles, { maxItems: 30, maxLen: 120 });
-const exclude_titles = normStringArray(body?.exclude_titles, { maxItems: 30, maxLen: 120 });
-const industries = normStringArray(body?.industries, { maxItems: 30, maxLen: 120 });
-const countries_allowed = normStringArray(body?.countries_allowed, { maxItems: 20, maxLen: 80 });
-const locations = normStringArray(body?.locations, { maxItems: 20, maxLen: 120 });
-const language_requirements = normStringArray(body?.language_requirements, { maxItems: 10, maxLen: 80 });
-const seniority = normStringArray(body?.seniority, { maxItems: 10, maxLen: 80 });
-const work_type = normStringArray(body?.work_type, { maxItems: 10, maxLen: 80 });
-
-const radius_km = normRadiusKm(body?.radius_km);
-const salary_min =
-body?.salary_min === null || body?.salary_min === undefined || body?.salary_min === ""
-? null
-: Number.isFinite(Number(body?.salary_min))
-? Math.max(0, Math.round(Number(body?.salary_min)))
-: null;
-
-const row = {
-customer_id,
-desired_titles,
-exclude_titles,
-industries,
-countries_allowed,
-locations,
-seniority,
-radius_km,
-salary_min,
-language_requirements: language_requirements.length ? language_requirements : null,
-work_type: work_type.length ? work_type : null,
-updated_at: new Date().toISOString(),
-};
-
-await supabaseFetch(env, `/rest/v1/customer_profiles?on_conflict=customer_id`, {
-method: "POST",
-body: [row],
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-
-return json(request, { ok: true, customer_id }, 200);
-}
-
-/* -----------------------------
-PUBLIC: POST /customer-plans/upsert
------------------------------ */
-
-async function handleCustomerPlanUpsertPublic(request, env) {
-let body = null;
-try {
-body = await request.json();
-} catch {
-return json(request, { error: "Invalid JSON body" }, 400);
-}
-
-const customer_id = (body?.customer_id || "").toString().trim();
-if (!looksLikeUuid(customer_id)) {
-return json(request, { error: "Valid customer_id (uuid) is required" }, 400);
-}
-
-const plan_id = (body?.plan_id || "").toString().trim().toLowerCase();
-const allowed = new Set(["starter", "pro", "max"]);
-if (!allowed.has(plan_id)) {
-return json(request, { error: "Invalid plan_id", allowed: Array.from(allowed) }, 400);
-}
-
-const row = { customer_id, plan_id, updated_at: new Date().toISOString() };
-
-await supabaseFetch(env, `/rest/v1/customer_plans?on_conflict=customer_id`, {
-method: "POST",
-body: [row],
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-
-return json(request, { ok: true, customer_id, plan_id }, 200);
-}
-
-/* -----------------------------
-Cron: nightly fetch jobs for all customers
------------------------------ */
-
-async function runNightlyCron(env) {
-const startedAt = new Date().toISOString();
-
-const q = new URLSearchParams();
-q.set("select", "customer_id");
-q.set("limit", "1000");
-
-const profiles = await supabaseFetch(env, `/rest/v1/customer_profiles?${q.toString()}`, { method: "GET" });
-const customerIds = Array.from(new Set((profiles || []).map((p) => p.customer_id).filter(Boolean)));
-
-const maxCustomers = parseInt(env.CRON_MAX_CUSTOMERS || "200", 10);
-const batch = customerIds.slice(0, maxCustomers);
-
-let attempted = 0;
-let fetched = 0;
-let skipped = 0;
-let failed = 0;
-
-for (const customerId of batch) {
-attempted += 1;
-try {
-const r = await fetchJobsForCustomerCore(customerId, env, "cron");
-if (r && r.skipped) skipped += 1;
-else fetched += 1;
-} catch (e) {
-failed += 1;
-console.log("CRON customer failed", customerId, String(e));
-}
-}
-
-console.log("CRON summary", { startedAt, attempted, fetched, skipped, failed });
-}
-
-/* -----------------------------
-Shared core: fetch jobs for one customer (daily protected)
------------------------------ */
-
-async function fetchJobsForCustomerCore(customerId, env, fetchedBy = "team") {
-const todayUTC = new Date().toISOString().slice(0, 10);
-const todayStart = `${todayUTC}T00:00:00.000Z`;
-
-const todayCheck = new URLSearchParams();
-todayCheck.set("select", "id,created_at");
-todayCheck.set("customer_id", `eq.${customerId}`);
-todayCheck.set("created_at", `gte.${todayStart}`);
-todayCheck.set("limit", "1");
-
-const alreadyFetched = await supabaseFetch(env, `/rest/v1/customer_fetch_logs?${todayCheck.toString()}`, { method: "GET" });
-if (Array.isArray(alreadyFetched) && alreadyFetched.length > 0) {
-return { ok: true, customer_id: customerId, message: "Jobs already fetched today", skipped: true };
-}
-
-const qProfile = new URLSearchParams();
-qProfile.set("select", "customer_id,desired_titles,locations,radius_km,countries_allowed");
-qProfile.set("customer_id", `eq.${customerId}`);
-qProfile.set("limit", "1");
-
-const profiles = await supabaseFetch(env, `/rest/v1/customer_profiles?${qProfile.toString()}`, { method: "GET" });
-if (!Array.isArray(profiles) || profiles.length === 0) throw new Error("Customer profile not found");
-
-const p = profiles[0];
-const desiredTitles = Array.isArray(p.desired_titles) ? p.desired_titles.filter(Boolean) : [];
-const locations = Array.isArray(p.locations) ? p.locations.filter(Boolean) : [];
-const radiusKm = Number.isFinite(Number(p.radius_km)) ? Number(p.radius_km) : 50;
-
-if (!desiredTitles.length) throw new Error("Customer has no desired_titles");
-if (!locations.length) throw new Error("Customer has no locations");
-
-const wo = String(locations[0]).trim();
-
-let totalFetched = 0;
-let totalInsertedRaw = 0;
-let totalUpsertedNormalized = 0;
-const details = [];
-
-for (const title of desiredTitles) {
-const r = await ingestBaOnce({ was: String(title).trim(), wo, umkreis: radiusKm, page: 1, size: 25, veroeffentlichtseit: 365 }, env);
-totalFetched += r.fetched;
-totalInsertedRaw += r.inserted_raw;
-totalUpsertedNormalized += r.upserted_normalized;
-details.push({ was: r.was, wo: r.wo, fetched: r.fetched, inserted_raw: r.inserted_raw, upserted_normalized: r.upserted_normalized });
-}
-
-// Find matching normalized jobs for this customer profile
-const jobParams = new URLSearchParams();
-jobParams.set("select", "id");
-jobParams.set("status", "eq.active");
-jobParams.set("limit", "200");
-
-if (locations.length) {
-jobParams.set("city", `in.(${locations.map((l) => `"${l}"`).join(",")})`);
-}
-
-if (desiredTitles.length) {
-const ors = desiredTitles.map((t) => `title.ilike.*${escapeForPostgrestLike(t)}*`);
-jobParams.set("or", `(${ors.join(",")})`);
-}
-
-const matchedJobs = await supabaseFetch(env, `/rest/v1/jobs_normalized?${jobParams.toString()}`, { method: "GET" });
-const matchedJobIds = (matchedJobs || []).map((j) => j.id);
-
-// Enqueue jobs for the customer (status=new)
-const queuedCount = await enqueueJobsForCustomer(env, customerId, matchedJobIds, fetchedBy);
-
-await supabaseFetch(env, `/rest/v1/customer_fetch_logs`, {
-method: "POST",
-body: [{ customer_id: customerId, fetched_by: fetchedBy, total_jobs_added: queuedCount }],
-});
-
-return {
-ok: true,
-customer_id: customerId,
-location_used: wo,
-radius_km_used: radiusKm,
-searches_run: desiredTitles.length,
-total_fetched: totalFetched,
-total_inserted_raw: totalInsertedRaw,
-total_upserted_normalized: totalUpsertedNormalized,
-details,
-};
-}
-
-/* -----------------------------
-GET /customers/search?email=...
------------------------------ */
-
-async function handleCustomerSearch(request, url, env) {
-if (!isAdminAuthorized(request, env)) return json(request, { error: "Unauthorized" }, 401);
-
-const email = (url.searchParams.get("email") || "").trim().toLowerCase();
-if (!email) return json(request, { error: "email is required" }, 400);
-
-const qCust = new URLSearchParams();
-qCust.set("select", "id,email,full_name,created_at");
-qCust.set("email", `eq.${email}`);
-qCust.set("limit", "1");
-
-const customers = await supabaseFetch(env, `/rest/v1/customers?${qCust.toString()}`, { method: "GET" });
-if (!Array.isArray(customers) || customers.length === 0) {
-return json(request, { ok: true, found: false, email }, 200);
-}
-
-const c = customers[0];
-
-const qProf = new URLSearchParams();
-qProf.set("select", "customer_id,locations,radius_km,desired_titles,exclude_titles,countries_allowed,updated_at");
-qProf.set("customer_id", `eq.${c.id}`);
-qProf.set("limit", "1");
-
-const profiles = await supabaseFetch(env, `/rest/v1/customer_profiles?${qProf.toString()}`, { method: "GET" });
-const profile = Array.isArray(profiles) && profiles.length ? profiles[0] : null;
-
-return json(request, { ok: true, found: true, customer: { id: c.id, email: c.email, full_name: c.full_name, created_at: c.created_at }, profile }, 200);
-}
-
-/* -----------------------------
-GET /jobs/search
------------------------------ */
-
-async function handleJobSearch(url, env, request) {
-const supabaseUrl = mustEnv(env, "SUPABASE_URL").replace(/\/$/, "");
-const serviceKey = mustEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
-
-const country = (url.searchParams.get("country") || "").trim();
-const q = (url.searchParams.get("q") || "").trim();
-const city = (url.searchParams.get("city") || "").trim();
-const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "25", 10) || 25, 1), 100);
-const email = (url.searchParams.get("email") || "").trim().toLowerCase();
-
-if (!country) return json(request, { error: "country is required (UK, DE, TH, ID)" }, 400);
-
-const qSafe = q ? escapeForPostgrestLike(q) : "";
-const citySafe = city ? escapeForPostgrestLike(city) : "";
-
-const select = "id,title,company_name,country,city,region,apply_url,posted_at,fetched_at,status";
-
-const params = new URLSearchParams();
-params.set("select", select);
-params.set("country", `eq.${country}`);
-params.set("status", "eq.active");
-params.set("order", "posted_at.desc");
-params.set("limit", String(limit));
-
-if (citySafe) params.set("city", `ilike.*${citySafe}*`);
-if (qSafe) params.set("or", `(title.ilike.*${qSafe}*,description_snippet.ilike.*${qSafe}*)`);
-
-if (email) {
-const qCust = new URLSearchParams();
-qCust.set("select", "id");
-qCust.set("email", `eq.${email}`);
-qCust.set("limit", "1");
-
-const customers = await supabaseFetch(env, `/rest/v1/customers?${qCust.toString()}`, { method: "GET" });
-
-if (Array.isArray(customers) && customers.length) {
-const customerId = customers[0].id;
-
-const qApps = new URLSearchParams();
-qApps.set("select", "job_id");
-qApps.set("customer_id", `eq.${customerId}`);
-qApps.set("status", "in.(applied,skipped,rejected,expired)");
-qApps.set("limit", "2000");
-
-const apps = await supabaseFetch(env, `/rest/v1/applications?${qApps.toString()}`, { method: "GET" });
-const jobIds = (apps || []).map((a) => a.job_id).filter(Boolean);
-if (jobIds.length) params.set("id", `not.in.(${jobIds.join(",")})`);
-}
-}
-
-const endpoint = `${supabaseUrl}/rest/v1/jobs_normalized?${params.toString()}`;
-
-const res = await fetch(endpoint, {
-method: "GET",
-headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-});
-
-const text = await res.text();
-if (!res.ok) return json(request, { error: "Supabase query failed", status: res.status, details: text }, 500);
-
-const data = text ? JSON.parse(text) : [];
-return json(request, { count: data.length, data }, 200);
-}
-
-/* -----------------------------
-GET /customers/:customerId/jobs/queue
-True queue:
-- reads applications where status=new
-- returns those jobs from jobs_normalized
------------------------------ */
-
-async function handleCustomerJobQueue(request, url, env) {
-if (!isAdminAuthorized(request, env)) return json(request, { error: "Unauthorized" }, 401);
-
-const customerId = url.pathname.split("/")[2];
-
-const qApps = new URLSearchParams();
-qApps.set("select", "job_id,created_at");
-qApps.set("customer_id", `eq.${customerId}`);
-qApps.set("status", "eq.new");
-qApps.set("order", "created_at.desc");
-qApps.set("limit", "200");
-
-const apps = await supabaseFetch(env, `/rest/v1/applications?${qApps.toString()}`, { method: "GET" });
-const jobIds = (apps || []).map((a) => a.job_id).filter(Boolean);
-
-if (!jobIds.length) {
-return json(request, { ok: true, customer_id: customerId, count: 0, data: [] }, 200);
-}
-
-const qJobs = new URLSearchParams();
-qJobs.set("select", "id,title,company_name,country,city,region,employment_type,seniority,apply_url,posted_at,fetched_at,status");
-qJobs.set("id", `in.(${jobIds.join(",")})`);
-qJobs.set("limit", String(jobIds.length));
-
-const jobs = await supabaseFetch(env, `/rest/v1/jobs_normalized?${qJobs.toString()}`, { method: "GET" });
-
-const orderIndex = new Map(jobIds.map((id, idx) => [id, idx]));
-const sortedJobs = (jobs || []).slice().sort((a, b) => (orderIndex.get(a.id) ?? 999999) - (orderIndex.get(b.id) ?? 999999));
-
-return json(request, { ok: true, customer_id: customerId, count: sortedJobs.length, data: sortedJobs }, 200);
-}
-
-/* -----------------------------
-NEW: GET /customers/:customerId/applications/summary (admin)
------------------------------ */
-
-async function handleCustomerApplicationsSummary(request, url, env) {
-if (!isAdminAuthorized(request, env)) return json(request, { error: "Unauthorized" }, 401);
-
-const customerId = url.pathname.split("/")[2];
-
-const q = new URLSearchParams();
-q.set("select", "status");
-q.set("customer_id", `eq.${customerId}`);
-q.set("limit", "5000");
-
-const rows = await supabaseFetch(env, `/rest/v1/applications?${q.toString()}`, { method: "GET" });
-
-const counts = {};
-let total = 0;
-
-for (const r of (rows || [])) {
-const s = (r.status || "unknown").toString();
-counts[s] = (counts[s] || 0) + 1;
-total += 1;
-}
-
-return json(request, { ok: true, customer_id: customerId, total, counts }, 200);
-}
-
-/* -----------------------------
-POST /customers/:customerId/fetch-jobs (daily protected)
------------------------------ */
-
-async function handleFetchJobsForCustomer(request, url, env) {
-if (!isAdminAuthorized(request, env)) return json(request, { error: "Unauthorized" }, 401);
-
-const customerId = url.pathname.split("/")[2];
-const result = await fetchJobsForCustomerCore(customerId, env, "team");
-return json(request, result, 200);
-}
-
-/* -----------------------------
-POST /applications/mark (supports refnr OR job_id)
------------------------------ */
-
-async function handleMarkApplication(request, env) {
-const adminToken = (env.WORKER_ADMIN_TOKEN || "").trim();
-if (!adminToken) return json(request, { error: "Missing WORKER_ADMIN_TOKEN on Worker" }, 500);
-
-const incomingToken = (request.headers.get("x-admin-token") || "").trim();
-if (incomingToken !== adminToken) return json(request, { error: "Unauthorized" }, 401);
-
-let body;
-try {
-body = await request.json();
-} catch {
-return json(request, { error: "Invalid JSON body" }, 400);
-}
-
-const email = (body.email || "").toString().trim().toLowerCase();
-const fullName = (body.full_name || "").toString().trim();
-const refnr = (body.refnr || "").toString().trim();
-const jobIdFromBody = (body.job_id || "").toString().trim();
-const status = (body.status || "applied").toString().trim();
-const notes = (body.notes || "").toString().trim();
-const appliedBy = (body.applied_by || "").toString().trim();
-
-if (!email) return json(request, { error: "email is required" }, 400);
-if (!refnr && !jobIdFromBody) return json(request, { error: "refnr or job_id is required" }, 400);
-
-const allowed = new Set(["new", "shortlisted", "applied", "skipped", "rejected", "expired"]);
-if (!allowed.has(status)) return json(request, { error: "Invalid status", allowed: Array.from(allowed) }, 400);
-
-let jobId = "";
-
-if (jobIdFromBody) {
-if (!looksLikeUuid(jobIdFromBody)) return json(request, { error: "job_id is not a valid uuid", job_id: jobIdFromBody }, 400);
-
-const qJobById = new URLSearchParams();
-qJobById.set("select", "id");
-qJobById.set("id", `eq.${jobIdFromBody}`);
-qJobById.set("limit", "1");
-
-const jobsById = await supabaseFetch(env, `/rest/v1/jobs_normalized?${qJobById.toString()}`, { method: "GET" });
-if (!Array.isArray(jobsById) || jobsById.length === 0) return json(request, { error: "Job not found for job_id", job_id: jobIdFromBody }, 404);
-
-jobId = jobsById[0].id;
-} else {
-const sourceId = await getSourceId(env, "BA Jobsuche", "DE");
-
-const qJob = new URLSearchParams();
-qJob.set("select", "id");
-qJob.set("source_id", `eq.${sourceId}`);
-qJob.set("external_job_id", `eq.${refnr}`);
-qJob.set("limit", "1");
-
-const jobs = await supabaseFetch(env, `/rest/v1/jobs_normalized?${qJob.toString()}`, { method: "GET" });
-if (!Array.isArray(jobs) || jobs.length === 0) return json(request, { error: "Job not found for refnr", refnr }, 404);
-
-jobId = jobs[0].id;
-}
-
-await supabaseFetch(env, `/rest/v1/customers?on_conflict=email`, {
-method: "POST",
-body: [{ email, full_name: fullName || null }],
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-
-const qCust = new URLSearchParams();
-qCust.set("select", "id");
-qCust.set("email", `eq.${email}`);
-qCust.set("limit", "1");
-
-const customers = await supabaseFetch(env, `/rest/v1/customers?${qCust.toString()}`, { method: "GET" });
-if (!Array.isArray(customers) || customers.length === 0) return json(request, { error: "Customer lookup failed after upsert", email }, 500);
-
-const customerId = customers[0].id;
-
-await supabaseFetch(env, `/rest/v1/applications?on_conflict=customer_id,job_id`, {
-method: "POST",
-body: [{
-customer_id: customerId,
-job_id: jobId,
-status,
-notes: notes || null,
-applied_by: appliedBy || null,
-updated_at: new Date().toISOString(),
-}],
-headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-});
-
-return json(request, { ok: true, email, refnr: refnr || null, job_id: jobId, status, customer_id: customerId }, 200);
-}
-
-/* -----------------------------
-GET /jobs/de/<refnr> (HTML page)
------------------------------ */
-
-async function handleDEJobDetails(url, env, request) {
-const refnr = decodeURIComponent(url.pathname.replace("/jobs/de/", "")).trim();
-if (!refnr) return json(request, { error: "Missing refnr" }, 400);
-
-const sourceId = await getSourceId(env, "BA Jobsuche", "DE");
-
-const q1 = new URLSearchParams();
-q1.set("select", "id,title,company_name,country,city,region,employment_type,seniority,description_snippet,apply_url,posted_at,fetched_at,status,external_job_id");
-q1.set("source_id", `eq.${sourceId}`);
-q1.set("external_job_id", `eq.${refnr}`);
-
-const jobs = await supabaseFetch(env, `/rest/v1/jobs_normalized?${q1.toString()}`, { method: "GET" });
-
-if (!Array.isArray(jobs) || jobs.length === 0) {
-return htmlPage(request, "Job not found", `<div class="card"><h1>Job not found</h1><p>refnr: ${escapeHtml(refnr)}</p></div>`, 404);
-}
-
-const q2 = new URLSearchParams();
-q2.set("select", "raw_payload,fetched_at,external_job_id");
-q2.set("source_id", `eq.${sourceId}`);
-q2.set("external_job_id", `eq.${refnr}`);
-q2.set("limit", "1");
-q2.set("order", "fetched_at.desc");
-
-const raw = await supabaseFetch(env, `/rest/v1/raw_jobs?${q2.toString()}`, { method: "GET" });
-
-const job = jobs[0];
-const rawPayload = Array.isArray(raw) && raw.length ? raw[0].raw_payload : null;
-
-const format = (url.searchParams.get("format") || "").toLowerCase();
-if (format === "json") return json(request, { job, raw: Array.isArray(raw) && raw.length ? raw[0] : null }, 200);
-
-const title = job.title || "Job Details";
-const company = job.company_name || (rawPayload?.arbeitgeber ?? "");
-const city = job.city || (rawPayload?.arbeitsort?.ort ?? "");
-const region = job.region || (rawPayload?.arbeitsort?.region ?? "");
-const plz = rawPayload?.arbeitsort?.plz ?? "";
-const street = rawPayload?.arbeitsort?.strasse ?? "";
-const postedAt = job.posted_at ? new Date(job.posted_at).toISOString().slice(0, 10) : "";
-const entryDate = rawPayload?.eintrittsdatum ?? "";
-
-const content = `
-<div class="card">
-<div class="meta">Germany · ${escapeHtml(city)}${region ? ", " + escapeHtml(region) : ""}</div>
-<h1>${escapeHtml(title)}</h1>
-<div class="company">${escapeHtml(company)}</div>
-
-<div class="grid">
-<div>
-<div class="label">Reference (BA)</div>
-<div class="value">${escapeHtml(refnr)}</div>
-</div>
-<div>
-<div class="label">Posted at</div>
-<div class="value">${escapeHtml(postedAt || "-")}</div>
-</div>
-<div>
-<div class="label">Start date</div>
-<div class="value">${escapeHtml(entryDate || "-")}</div>
-</div>
-<div>
-<div class="label">Address</div>
-<div class="value">${escapeHtml([street, plz, city].filter(Boolean).join(", ") || "-")}</div>
-</div>
-</div>
-
-<div class="actions">
-<button id="copyRef">Copy refnr</button>
-<button id="copyCompany">Copy company</button>
-<button id="copyTitle">Copy title</button>
-<button id="googleSearch">Google search job</button>
-<button id="markApplied">Mark as applied</button>
-</div>
-
-<details>
-<summary>Raw data (BA)</summary>
-<pre>${escapeHtml(JSON.stringify(rawPayload, null, 2) || "{}")}</pre>
-</details>
-
-<p class="hint">Tip: Use the Google search button to find the real company posting, then apply manually.</p>
-</div>
-
-<script>
-function copy(text) { navigator.clipboard.writeText(text); }
-
-const refnr = ${JSON.stringify(refnr)};
-const company = ${JSON.stringify(company)};
-const title = ${JSON.stringify(title)};
-
-document.getElementById("copyRef").addEventListener("click", () => copy(refnr));
-document.getElementById("copyCompany").addEventListener("click", () => copy(company));
-document.getElementById("copyTitle").addEventListener("click", () => copy(title));
-
-document.getElementById("googleSearch").addEventListener("click", () => {
-const query = encodeURIComponent(title + " " + company + " " + refnr);
-window.open("https://www.google.com/search?q=" + query, "_blank");
-});
-
-document.getElementById("markApplied").addEventListener("click", async () => {
-const email = prompt("Customer email:");
-if (!email) return;
-
-const token = prompt("Team admin token (x-admin-token):");
-if (!token) return;
-
-const notes = prompt("Notes (optional):") || "";
-
-const res = await fetch(new URL("/applications/mark", window.location.origin).toString(), {
-method: "POST",
-headers: { "Content-Type": "application/json", "x-admin-token": token.trim() },
-body: JSON.stringify({ email: email.trim().toLowerCase(), full_name: "", refnr, status: "applied", applied_by: "team", notes })
-});
-
-const data = await res.json();
-if (!res.ok) { alert("Failed: " + (data.error || "unknown error")); return; }
-alert("Saved as applied");
-});
-</script>
-`;
-
-return htmlPage(request, title, content, 200);
-}
-
-function htmlPage(request, title, bodyHtml, status = 200) {
-const html = `
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${escapeHtml(title)}</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobApplyAI Workplace</title>
 <style>
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f6f7fb; color: #111; }
-.wrap { max-width: 900px; margin: 0 auto; padding: 24px; }
-.card { background: white; border-radius: 14px; padding: 22px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
-h1 { margin: 8px 0 6px; font-size: 26px; line-height: 1.2; }
-.meta { font-size: 13px; opacity: 0.75; }
-.company { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
-.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
-.label { font-size: 12px; opacity: 0.7; margin-bottom: 4px; }
-.value { font-size: 14px; font-weight: 600; word-break: break-word; }
-.actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 18px; }
-button { border: 1px solid #ddd; background: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+.container { max-width: 1100px; margin: 0 auto; padding: 18px; }
+.card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 14px; }
+h1 { margin: 0 0 10px; font-size: 22px; }
+h2 { margin: 0 0 10px; font-size: 16px; }
+h3 { margin: 0 0 10px; font-size: 14px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+label { display: block; font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
+input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; }
+button { border: 1px solid #ddd; background: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 650; }
 button:hover { background: #f2f2f2; }
-details { margin-top: 18px; }
-pre { background: #0b1020; color: #e6e6e6; padding: 14px; border-radius: 12px; overflow: auto; }
-.hint { margin-top: 16px; font-size: 13px; opacity: 0.75; }
-@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.small { font-size: 12px; opacity: 0.75; }
+.status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; background: #0b1020; color: #e6e6e6; padding: 12px; border-radius: 12px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+th { font-size: 12px; opacity: 0.75; }
+td { font-size: 14px; }
+.badge { display: inline-block; padding: 4px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+a { color: inherit; }
+.kpiRow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.kpi { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+.kpi b { font-size: 12px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-${bodyHtml}
+<div class="container">
+<div class="card">
+<h1>JobApplyAI Workplace</h1>
+<div class="small">
+This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in GitHub Pages. Use the inputs below (stored in your browser localStorage).
 </div>
-</body>
-</html>
-`.trim();
+</div>
 
-return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", ...corsHeaders(request) } });
+<div class="card">
+<h2>Configuration</h2>
+<div class="row">
+<div>
+<label>API Base URL</label>
+<input id="apiBase" placeholder="https://jobapplyai-api.schoene-viktor.workers.dev">
+</div>
+<div>
+<label>Admin Token (x-admin-token)</label>
+<input id="adminToken" placeholder="Paste token here">
+</div>
+</div>
+<div class="actions">
+<button id="saveConfig">Save Config</button>
+<button id="clearConfig">Clear</button>
+<button id="healthCheck">Health Check</button>
+</div>
+</div>
+
+<div class="card">
+<h2>Customer</h2>
+<div class="row">
+<div>
+<label>Customer ID (UUID)</label>
+<input id="customerId" placeholder="213f6290-fe25-4168-8b57-82395747f4c7">
+</div>
+<div>
+<label>Customer Email (used for Mark Applied)</label>
+<input id="customerEmail" placeholder="demo.customer+001@gmail.com">
+</div>
+</div>
+<div class="actions">
+<button id="findCustomer">Find Customer by Email</button>
+<button id="fetchJobs">Fetch Jobs (daily protected)</button>
+<button id="loadQueue">Load Queue</button>
+</div>
+<div class="small">Fetch Jobs will return “Jobs already fetched today” if you click again on the same day.</div>
+</div>
+
+<div class="card">
+<h2>Status overview</h2>
+<div class="small" id="statusMeta">No customer selected.</div>
+<div class="kpiRow" id="statusKpis" style="display:none"></div>
+</div>
+
+<div class="card">
+<h2>Job Queue</h2>
+<div class="small" id="queueMeta">No data loaded yet.</div>
+<div style="overflow:auto; margin-top:10px;">
+<table id="jobsTable">
+<thead>
+<tr>
+<th>Title</th>
+<th>Company</th>
+<th>Location</th>
+<th>Posted</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody id="jobsTbody"></tbody>
+</table>
+</div>
+</div>
+
+<div class="card">
+<h2>Response Log</h2>
+<div id="log" class="status">Ready.</div>
+</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function setLog(obj) {
+const text = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+$("log").textContent = text;
+}
+
+function getConfig() {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+const token = ($("adminToken").value || "").trim();
+return { apiBase, token };
+}
+
+function authHeaders(token) {
+return { "x-admin-token": token, "Content-Type": "application/json" };
+}
+
+function loadSaved() {
+const saved = JSON.parse(localStorage.getItem("jobapplyai_workplace") || "{}");
+if (saved.apiBase) $("apiBase").value = saved.apiBase;
+if (saved.token) $("adminToken").value = saved.token;
+if (saved.customerId) $("customerId").value = saved.customerId;
+if (saved.customerEmail) $("customerEmail").value = saved.customerEmail;
+}
+
+function saveNow() {
+const data = {
+apiBase: ($("apiBase").value || "").trim().replace(/\/$/, ""),
+token: ($("adminToken").value || "").trim(),
+customerId: ($("customerId").value || "").trim(),
+customerEmail: ($("customerEmail").value || "").trim()
+};
+localStorage.setItem("jobapplyai_workplace", JSON.stringify(data));
+setLog({ ok: true, message: "Saved to localStorage (only in your browser)." });
+}
+
+function clearNow() {
+localStorage.removeItem("jobapplyai_workplace");
+$("apiBase").value = "";
+$("adminToken").value = "";
+$("customerId").value = "";
+$("customerEmail").value = "";
+$("jobsTbody").innerHTML = "";
+$("queueMeta").textContent = "No data loaded yet.";
+$("statusMeta").textContent = "No customer selected.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+setLog("Cleared.");
+}
+
+async function apiGet(path) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "GET", headers: authHeaders(token) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
+return data;
+}
+
+async function apiPost(path, bodyObj) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "POST", headers: authHeaders(token), body: JSON.stringify(bodyObj || {}) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
+return data;
+}
+
+function renderJobs(queue) {
+const tbody = $("jobsTbody");
+tbody.innerHTML = "";
+const jobs = (queue && queue.data) ? queue.data : [];
+$("queueMeta").textContent = `Loaded ${jobs.length} jobs. Customer: ${queue.customer_id || "-"}`;
+for (const j of jobs) {
+const tr = document.createElement("tr");
+const posted = j.posted_at ? String(j.posted_at).slice(0, 10) : "-";
+const loc = [j.city, j.country].filter(Boolean).join(", ") || "-";
+const title = j.title || "-";
+const company = j.company_name || "-";
+const applyUrl = j.apply_url || "";
+const jobId = j.id || "";
+
+tr.innerHTML = `
+<td>${escapeHtml(title)}</td>
+<td>${escapeHtml(company)}</td>
+<td>${escapeHtml(loc)}</td>
+<td><span class="badge">${escapeHtml(posted)}</span></td>
+<td></td>
+`;
+
+const tdActions = tr.querySelector("td:last-child");
+
+const openBtn = document.createElement("button");
+openBtn.textContent = "Open";
+openBtn.onclick = () => {
+if (!applyUrl) { alert("No apply_url"); return; }
+window.open(applyUrl, "_blank");
+};
+
+const markBtn = document.createElement("button");
+markBtn.textContent = "Mark Applied";
+markBtn.onclick = async () => {
+try {
+const customerEmail = ($("customerEmail").value || "").trim().toLowerCase();
+if (!customerEmail) { alert("Please enter Customer Email first."); return; }
+if (!jobId) { alert("Missing job_id in row."); return; }
+const payload = {
+email: customerEmail,
+full_name: "",
+job_id: jobId,
+status: "applied",
+applied_by: "team",
+notes: ""
+};
+const res = await apiPost("/applications/mark", payload);
+setLog(res);
+await loadQueue();
+} catch (e) {
+setLog({ error: "Mark applied failed", details: String(e) });
+}
+};
+
+tdActions.appendChild(openBtn);
+tdActions.appendChild(document.createTextNode(" "));
+tdActions.appendChild(markBtn);
+
+tbody.appendChild(tr);
+}
 }
 
 function escapeHtml(s) {
@@ -995,134 +256,130 @@ return String(s ?? "")
 .replace(/'/g, "&#039;");
 }
 
-/* -----------------------------
-POST /ingest/ba
------------------------------ */
+function renderStatusSummary(data) {
+const meta = $("statusMeta");
+const kpis = $("statusKpis");
 
-async function handleIngestBA(request, env) {
-if (!isAdminAuthorized(request, env)) return json(request, { error: "Unauthorized" }, 401);
+if (!data || !data.ok) {
+meta.textContent = "Failed to load status overview.";
+kpis.innerHTML = "";
+kpis.style.display = "none";
+return;
+}
 
-let body = {};
+const counts = data.counts || {};
+const total = Number(data.total || 0);
+
+const get = (k) => Number(counts[k] || 0);
+const newCount = get("new");
+const applied = get("applied");
+const shortlisted = get("shortlisted");
+const skipped = get("skipped");
+const rejected = get("rejected");
+const expired = get("expired");
+
+meta.textContent = `Customer: ${data.customer_id} · Total tracked: ${total}`;
+kpis.style.display = "flex";
+kpis.innerHTML = `
+<div class="kpi">New <b>${newCount}</b></div>
+<div class="kpi">Applied <b>${applied}</b></div>
+<div class="kpi">Shortlisted <b>${shortlisted}</b></div>
+<div class="kpi">Skipped <b>${skipped}</b></div>
+<div class="kpi">Rejected <b>${rejected}</b></div>
+<div class="kpi">Expired <b>${expired}</b></div>
+`;
+}
+
+async function loadStatusSummary() {
 try {
-body = await request.json();
-} catch {
-body = {};
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) {
+$("statusMeta").textContent = "No customer selected.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+return;
+}
+$("statusMeta").textContent = "Loading status overview...";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/applications/summary`);
+renderStatusSummary(res);
+} catch (e) {
+$("statusMeta").textContent = "Failed to load status overview.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+}
 }
 
-const was = (body.was ?? "").toString().trim();
-const wo = (body.wo ?? "").toString().trim();
-const umkreis = Number(body.umkreis ?? 25);
-const page = Number(body.page ?? 1);
-const size = Math.min(Math.max(Number(body.size ?? 25), 1), 100);
-const veroeffentlichtseit = Number(body.veroeffentlichtseit ?? 30);
-
-const result = await ingestBaOnce({ was, wo, umkreis, page, size, veroeffentlichtseit }, env);
-
-return json(request, {
-ok: true,
-fetched: result.fetched,
-inserted_raw: result.inserted_raw,
-upserted_normalized: result.upserted_normalized,
-was: result.was,
-wo: result.wo,
-page: result.page,
-size: result.size,
-umkreis: result.umkreis,
-veroeffentlichtseit: result.veroeffentlichtseit,
-}, 200);
-}
-
-async function ingestBaOnce(input, env) {
-const baKey = (env.BA_API_KEY || "jobboerse-jobsuche").trim();
-const sourceId = await getSourceId(env, "BA Jobsuche", "DE");
-
-const was = (input.was ?? "").toString().trim();
-const wo = (input.wo ?? "").toString().trim();
-const umkreis = Number(input.umkreis ?? 25);
-const page = Number(input.page ?? 1);
-const size = Math.min(Math.max(Number(input.size ?? 25), 1), 100);
-const veroeffentlichtseit = Number(input.veroeffentlichtseit ?? 30);
-
-const params = new URLSearchParams();
-if (was) params.set("was", was);
-if (wo) params.set("wo", wo);
-params.set("umkreis", String(umkreis));
-params.set("page", String(page));
-params.set("size", String(size));
-params.set("veroeffentlichtseit", String(veroeffentlichtseit));
-
-const baUrl = `https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobs?${params.toString()}`;
-
-const baRes = await fetch(baUrl, {
-method: "GET",
-headers: { accept: "application/json", "X-API-Key": baKey },
-});
-
-const baText = await baRes.text();
-if (!baRes.ok) throw new Error(`BA API request failed ${baRes.status}: ${baText.slice(0, 200)}`);
-
-let baJson = null;
+async function healthCheck() {
 try {
-baJson = baText ? JSON.parse(baText) : null;
-} catch {
-throw new Error(`BA API returned non-JSON response: ${baText.slice(0, 200)}`);
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+if (!apiBase) throw new Error("Missing API Base URL");
+const res = await fetch(apiBase + "/health");
+const data = await res.json();
+setLog(data);
+} catch (e) {
+setLog({ error: "Health check failed", details: String(e) });
+}
 }
 
-const jobs =
-(baJson && (baJson.stellenangebote || baJson.stellenAngebote || baJson.jobs || baJson.items)) ||
-(Array.isArray(baJson) ? baJson : []);
-if (!Array.isArray(jobs)) throw new Error(`Unexpected BA response shape: ${baJson ? Object.keys(baJson) : "null"}`);
+async function findCustomer() {
+try {
+const email = ($("customerEmail").value || "").trim().toLowerCase();
+if (!email) { alert("Please enter customer email"); return; }
 
-const rawRows = [];
-const normRows = [];
+const res = await apiGet(`/customers/search?email=${encodeURIComponent(email)}`);
+setLog(res);
 
-for (const j of jobs) {
-const externalId = (j.refnr ?? j.refNr ?? j.hashId ?? j.id ?? j.stellenangebotsnummer ?? "").toString();
-if (!externalId) continue;
-
-const rawStr = JSON.stringify(j);
-const payloadHash = await sha256Hex(rawStr);
-
-rawRows.push({ source_id: sourceId, external_job_id: externalId, raw_payload: j, payload_hash: payloadHash });
-
-const title = (j.titel ?? j.title ?? j.bezeichnung ?? "").toString().trim();
-const company = (j.arbeitgeber ?? j.arbeitgebername ?? j.company ?? j.firma ?? "").toString().trim();
-const ort = (j.arbeitsort?.ort ?? j.arbeitsort?.stadt ?? j.ort ?? j.city ?? "").toString().trim();
-const region = (j.arbeitsort?.region ?? j.arbeitsort?.bundesland ?? j.region ?? "").toString().trim();
-
-const applyUrl = `https://jobapplyai-api.schoene-viktor.workers.dev/jobs/de/${encodeURIComponent(externalId)}`;
-const postedAtRaw = j.aktuelleVeroeffentlichungsdatum ?? j.veroeffentlichungsdatum ?? j.date ?? null;
-
-normRows.push({
-source_id: sourceId,
-external_job_id: externalId,
-title: title || "Unknown title",
-title_normalized: normalizeTitle(title || "Unknown title"),
-company_name: company || null,
-country: "DE",
-city: ort || null,
-region: region || null,
-employment_type: (j.arbeitszeit?.toString?.() ?? j.arbeitszeitmodell ?? null),
-seniority: null,
-description_snippet: (j.kurzbeschreibung ?? j.beschreibungKurz ?? "").toString().slice(0, 500) || null,
-apply_url: applyUrl,
-posted_at: postedAtRaw ? new Date(postedAtRaw).toISOString() : null,
-status: "active",
-});
+if (!res.found) {
+alert("Customer not found. Create the customer first.");
+return;
 }
 
-const rawCount = await upsertRawJobs(env, rawRows);
-const normCount = await upsertNormalizedJobs(env, normRows);
-
-return {
-was,
-wo,
-umkreis,
-page,
-size,
-veroeffentlichtseit,
-fetched: jobs.length,
-inserted_raw: rawCount,
-upserted_normalized: normCount,
-};
+$("customerId").value = res.customer.id;
+saveNow();
+await loadStatusSummary();
+alert("Customer found. customer_id filled.");
+} catch (e) {
+setLog({ error: "Find customer failed", details: String(e) });
 }
+}
+
+async function fetchJobs() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+const res = await apiPost(`/customers/${encodeURIComponent(customerId)}/fetch-jobs`, {});
+setLog(res);
+await loadQueue();
+} catch (e) {
+setLog({ error: "Fetch jobs failed", details: String(e) });
+}
+}
+
+async function loadQueue() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
+setLog(res);
+renderJobs(res);
+await loadStatusSummary();
+} catch (e) {
+setLog({ error: "Load queue failed", details: String(e) });
+}
+}
+
+$("saveConfig").addEventListener("click", saveNow);
+$("clearConfig").addEventListener("click", clearNow);
+$("healthCheck").addEventListener("click", healthCheck);
+$("fetchJobs").addEventListener("click", fetchJobs);
+$("loadQueue").addEventListener("click", loadQueue);
+$("findCustomer").addEventListener("click", findCustomer);
+
+loadSaved();
+loadStatusSummary();
+</script>
+</body>
+</html>
