@@ -2,496 +2,423 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JobApply-AI | Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JobApplyAI Workplace</title>
 <style>
-:root{
---bg:#ffffff;
---surface:#f6f7f8;
---text:#0b0b0b;
---muted:#4a4a4a;
---muted2:#6c6c6c;
---border:#d7dadc;
---shadow:0 12px 30px rgba(0,0,0,.08);
---shadow2:0 10px 26px rgba(0,0,0,.10);
---green:#00a63f;
---green2:#00c853;
---radius:22px;
---grad:linear-gradient(135deg,var(--green),var(--green2));
---max:1120px;
-}
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-margin:0;
-font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
-color:var(--text);
-background:
-radial-gradient(1100px 600px at 8% 0%, rgba(0,166,63,.12), transparent 60%),
-radial-gradient(900px 520px at 92% 6%, rgba(0,200,83,.10), transparent 55%),
-var(--bg);
-}
-a{color:inherit}
-.topbar{
-position:sticky;
-top:0;
-z-index:20;
-backdrop-filter:saturate(1.4) blur(10px);
-background:rgba(255,255,255,.72);
-border-bottom:1px solid rgba(215,218,220,.7);
-}
-.nav{
-max-width:var(--max);
-margin:0 auto;
-padding:14px 18px;
-display:flex;
-align-items:center;
-justify-content:space-between;
-gap:14px;
-}
-.brand{
-display:flex;
-align-items:center;
-gap:10px;
-font-weight:950;
-letter-spacing:.2px;
-text-decoration:none;
-}
-.logo{
-width:34px;
-height:34px;
-border-radius:12px;
-background:var(--grad);
-box-shadow:0 10px 24px rgba(0,166,63,.22);
-}
-.navlinks{
-display:flex;
-align-items:center;
-gap:10px;
-flex-wrap:wrap;
-justify-content:flex-end;
-}
-.pill{
-display:inline-flex;
-align-items:center;
-gap:8px;
-padding:9px 12px;
-border-radius:999px;
-border:1px solid rgba(215,218,220,.9);
-background:rgba(246,247,248,.92);
-font-weight:800;
-font-size:13px;
-text-decoration:none;
-transition:transform .12s ease, box-shadow .18s ease, border-color .15s ease, background .15s ease;
-cursor:pointer;
-}
-.pill:hover{transform:translateY(-1px);box-shadow:var(--shadow);border-color:rgba(0,166,63,.22)}
-.pill.primary{border-color:transparent;background:var(--text);color:#fff}
-.pill.primary:hover{transform:translateY(-1px);box-shadow:0 14px 36px rgba(0,0,0,.22)}
-.main{
-max-width:var(--max);
-margin:0 auto;
-padding:26px 18px 26px;
-}
-.h1{
-font-size:44px;
-line-height:1.02;
-letter-spacing:-1px;
-margin:10px 0 8px 0;
-}
-.sub{margin:0 0 18px 0;color:var(--muted);font-weight:650}
-.cards{
-display:grid;
-grid-template-columns:1fr 1fr 1fr;
-gap:14px;
-margin:14px 0 18px 0;
-}
-@media (max-width:980px){.cards{grid-template-columns:1fr}}
-.grid{
-display:grid;
-grid-template-columns:1.1fr .9fr;
-gap:18px;
-align-items:start;
-}
-@media (max-width:980px){.grid{grid-template-columns:1fr}}
-.card{
-background:rgba(255,255,255,.9);
-border:1px solid rgba(215,218,220,.85);
-border-radius:var(--radius);
-box-shadow:var(--shadow);
-padding:16px;
-}
-.card h2{margin:0 0 10px 0;font-size:16px}
-.kpi{
-display:flex;
-align-items:flex-end;
-justify-content:space-between;
-gap:10px;
-}
-.kpi .value{
-font-size:34px;
-font-weight:950;
-letter-spacing:-.6px;
-}
-.kpi .label{
-color:var(--muted2);
-font-weight:700;
-font-size:12px;
-}
-.badge{
-display:inline-flex;
-align-items:center;
-gap:8px;
-padding:8px 12px;
-border-radius:14px;
-border:1px solid rgba(215,218,220,.9);
-background:rgba(246,247,248,.92);
-font-weight:850;
-font-size:13px;
-color:var(--muted);
-}
-.badge.good{border-color:rgba(0,166,63,.25);color:#075b24}
-.badge.warn{border-color:rgba(255,176,0,.35);color:#7a4d00}
-.hr{height:1px;background:rgba(215,218,220,.8);margin:14px 0}
-.actions{
-display:flex;
-gap:10px;
-flex-wrap:wrap;
-align-items:center;
-}
-.btn{
-appearance:none;
-border:0;
-cursor:pointer;
-padding:10px 12px;
-border-radius:999px;
-font-weight:900;
-font-size:13px;
-letter-spacing:.2px;
-display:inline-flex;
-align-items:center;
-gap:8px;
-transition:transform .12s ease, box-shadow .18s ease, opacity .15s ease;
-text-decoration:none;
-}
-.btn:disabled{cursor:not-allowed;opacity:.55}
-.btn.primary{background:var(--grad);color:#fff;box-shadow:0 14px 34px rgba(0,166,63,.20)}
-.btn.primary:hover{transform:translateY(-1px);box-shadow:0 18px 40px rgba(0,166,63,.25)}
-.btn.ghost{background:var(--text);color:#fff}
-.btn.ghost:hover{transform:translateY(-1px);box-shadow:0 14px 36px rgba(0,0,0,.22)}
-.btn.light{border:1px solid rgba(215,218,220,.95);background:rgba(246,247,248,.92);color:var(--text)}
-.btn.light:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
-.table{
-width:100%;
-border-collapse:separate;
-border-spacing:0;
-overflow:hidden;
-border-radius:16px;
-border:1px solid rgba(215,218,220,.9);
-background:rgba(255,255,255,.92);
-}
-.table th,.table td{
-text-align:left;
-padding:10px 10px;
-font-size:13px;
-border-bottom:1px solid rgba(215,218,220,.7);
-vertical-align:top;
-}
-.table th{background:rgba(246,247,248,.92);font-weight:950}
-.table tr:last-child td{border-bottom:0}
-.small{font-size:12px;color:var(--muted2);font-weight:650}
-.footer{
-max-width:var(--max);
-margin:0 auto;
-padding:18px 18px 30px;
-color:var(--muted2);
-font-size:13px;
-}
-.mono{
-font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
-font-size:12px;
-word-break:break-all;
-}
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f6f7fb; color: #111; }
+.container { max-width: 1100px; margin: 0 auto; padding: 18px; }
+.card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 14px; }
+h1 { margin: 0 0 10px; font-size: 22px; }
+h2 { margin: 0 0 10px; font-size: 16px; }
+h3 { margin: 0 0 10px; font-size: 14px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+label { display: block; font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
+input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; }
+button { border: 1px solid #ddd; background: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 650; }
+button:hover { background: #f2f2f2; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.small { font-size: 12px; opacity: 0.75; }
+.status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; background: #0b1020; color: #e6e6e6; padding: 12px; border-radius: 12px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+th { font-size: 12px; opacity: 0.75; }
+td { font-size: 14px; }
+.badge { display: inline-block; padding: 4px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+a { color: inherit; }
+.kpiRow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.kpi { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+.kpi b { font-size: 12px; }
 </style>
 </head>
 <body>
-
-<header class="topbar">
-<nav class="nav">
-<a class="brand" href="index.html"><span class="logo" aria-hidden="true"></span><span>JobApply-AI</span></a>
-<div class="navlinks">
-<a class="pill" href="index.html">Home</a>
-<a class="pill" href="profile.html">Profile</a>
-<a class="pill" href="plan.html">Plan</a>
-<a class="pill primary" href="dashboard.html">Dashboard</a>
-<button class="pill" id="btnLogout" type="button">Logout</button>
-</div>
-</nav>
-</header>
-
-<main class="main">
-<h1 class="h1">Dashboard</h1>
-<p class="sub" id="subLine">Loading…</p>
-
-<div class="cards">
+<div class="container">
 <div class="card">
-<h2>Job queue</h2>
-<div class="kpi">
-<div>
-<div class="value" id="kpiQueue">–</div>
-<div class="label">jobs ready to apply</div>
-</div>
-<span class="badge" id="badgeQueue">Loading</span>
+<h1>JobApplyAI Workplace</h1>
+<div class="small">
+This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in GitHub Pages. Use the inputs below (stored in your browser localStorage).
 </div>
 </div>
 
 <div class="card">
-<h2>Applications</h2>
-<div class="kpi">
+<h2>Configuration</h2>
+<div class="row">
 <div>
-<div class="value" id="kpiAppsTotal">–</div>
-<div class="label">total applications</div>
+<label>API Base URL</label>
+<input id="apiBase" placeholder="https://jobapplyai-api.schoene-viktor.workers.dev">
 </div>
-<span class="badge" id="badgeApps">Loading</span>
-</div>
-</div>
-
-<div class="card">
-<h2>Plan</h2>
-<div class="kpi">
 <div>
-<div class="value" id="kpiPlan">–</div>
-<div class="label">selected plan</div>
-</div>
-<span class="badge" id="badgePlan">Local</span>
+<label>Admin Token (x-admin-token)</label>
+<input id="adminToken" placeholder="Paste token here">
 </div>
 </div>
-</div>
-
-<div class="grid">
-<section class="card">
-<h2>Queue preview</h2>
-<p class="small">Top 15 items from /me/jobs/queue.</p>
 <div class="actions">
-<button class="btn primary" id="btnRefresh" type="button">Refresh</button>
-<button class="btn light" id="btnCopyToken" type="button">Copy access token</button>
+<button id="saveConfig">Save Config</button>
+<button id="clearConfig">Clear</button>
+<button id="healthCheck">Health Check</button>
 </div>
-<div class="hr"></div>
-<div id="queueWrap"><span class="badge" id="queueState">Loading queue…</span></div>
-</section>
+</div>
 
-<aside class="card">
-<h2>Account</h2>
-<div class="badge good" id="badgeUser">Signed in</div>
-<div class="hr"></div>
-
-<div class="small">Email</div>
-<div class="mono" id="meEmail">–</div>
-
-<div class="hr"></div>
-<div class="small">Customer ID</div>
-<div class="mono" id="meCustomerId">–</div>
-
-<div class="hr"></div>
-<div class="small">Applications breakdown</div>
-<div id="appsBreakdown"><span class="badge">Loading…</span></div>
-
-<div class="hr"></div>
-<div class="small">Last refresh</div>
-<div class="mono" id="lastCheck">–</div>
-
-<div class="hr"></div>
+<div class="card">
+<h2>Customer</h2>
+<div class="row">
+<div>
+<label>Customer ID (UUID)</label>
+<input id="customerId" placeholder="213f6290-fe25-4168-8b57-82395747f4c7">
+</div>
+<div>
+<label>Customer Email (used for Mark Applied)</label>
+<input id="customerEmail" placeholder="demo.customer+001@gmail.com">
+</div>
+</div>
 <div class="actions">
-<a class="btn ghost" href="profile.html">Edit profile</a>
-<a class="btn ghost" href="plan.html">Change plan</a>
+<button id="findCustomer">Find Customer by Email</button>
+<button id="fetchJobs">Fetch Jobs (daily protected)</button>
+<button id="forceFetch">Force Fetch (ignore daily lock)</button>
+<button id="loadQueue">Load Queue</button>
+</div>
+<div class="small">Fetch Jobs will return “Jobs already fetched today” if you click again on the same day. Force Fetch ignores the daily lock (testing only).</div>
 </div>
 
-<div class="hr"></div>
-<div class="small" id="errorBox"></div>
-</aside>
+<div class="card">
+<h2>Status overview</h2>
+<div class="small" id="statusMeta">No customer selected.</div>
+<div class="small" id="fetchSummary" style="margin-top:8px;opacity:.85">—</div>
+<div class="small" id="capHint" style="margin-top:6px;opacity:.85">Recommended daily cap: —</div>
+<div class="kpiRow" id="statusKpis" style="display:none"></div>
 </div>
-</main>
 
-<footer class="footer">Support: <a href="mailto:schonv2@gmail.com">schonv2@gmail.com</a></footer>
+<div class="card">
+<h2>Job Queue</h2>
+<div class="small" id="queueMeta">No data loaded yet.</div>
+<div style="overflow:auto; margin-top:10px;">
+<table id="jobsTable">
+<thead>
+<tr>
+<th>Title</th>
+<th>Company</th>
+<th>Location</th>
+<th>Posted</th>
+<th>Actions</th>
+</tr>
+</thead>
+<tbody id="jobsTbody"></tbody>
+</table>
+</div>
+</div>
 
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<div class="card">
+<h2>Response Log</h2>
+<div id="log" class="status">Ready.</div>
+</div>
+</div>
+
 <script>
-const API_BASE = "https://jobapplyai-api.schoene-viktor.workers.dev";
+const $ = (id) => document.getElementById(id);
 
-// These are your real values (same as profile.html / plan.html)
-const SUPABASE_URL = "https://awlzvhcnjegfhjedswko.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3bHp2aGNuamVnZmhqZWRzd2tvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY2NTE2OTgsImV4cCI6MjA4MjIyNzY5OH0.-UmHiVi0_g9tKDkr6ldfROeBrOk8hm18YVPRfnb8luY";
+function setLog(obj) {
+const text = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+$("log").textContent = text;
+}
 
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-window.supabaseClient = supabaseClient;
+function getConfig() {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+const token = ($("adminToken").value || "").trim();
+return { apiBase, token };
+}
 
-function setText(id, text){
-const el = document.getElementById(id);
+function authHeaders(token) {
+return { "x-admin-token": token, "Content-Type": "application/json" };
+}
+
+function loadSaved() {
+const saved = JSON.parse(localStorage.getItem("jobapplyai_workplace") || "{}");
+if (saved.apiBase) $("apiBase").value = saved.apiBase;
+if (saved.token) $("adminToken").value = saved.token;
+if (saved.customerId) $("customerId").value = saved.customerId;
+if (saved.customerEmail) $("customerEmail").value = saved.customerEmail;
+}
+
+function saveNow() {
+const data = {
+apiBase: ($("apiBase").value || "").trim().replace(/\/$/, ""),
+token: ($("adminToken").value || "").trim(),
+customerId: ($("customerId").value || "").trim(),
+customerEmail: ($("customerEmail").value || "").trim()
+};
+localStorage.setItem("jobapplyai_workplace", JSON.stringify(data));
+setLog({ ok: true, message: "Saved to localStorage (only in your browser)." });
+}
+
+function clearNow() {
+localStorage.removeItem("jobapplyai_workplace");
+$("apiBase").value = "";
+$("adminToken").value = "";
+$("customerId").value = "";
+$("customerEmail").value = "";
+$("jobsTbody").innerHTML = "";
+$("queueMeta").textContent = "No data loaded yet.";
+$("statusMeta").textContent = "No customer selected.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+setLog("Cleared.");
+}
+
+async function apiGet(path) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "GET", headers: authHeaders(token) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
+return data;
+}
+
+async function apiPost(path, bodyObj) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "POST", headers: authHeaders(token), body: JSON.stringify(bodyObj || {}) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
+return data;
+}
+
+function renderJobs(queue) {
+const tbody = $("jobsTbody");
+tbody.innerHTML = "";
+const jobs = (queue && queue.data) ? queue.data : [];
+$("queueMeta").textContent = `Loaded ${jobs.length} jobs. Customer: ${queue.customer_id || "-"}`;
+for (const j of jobs) {
+const tr = document.createElement("tr");
+const posted = j.posted_at ? String(j.posted_at).slice(0, 10) : "-";
+const loc = [j.city, j.country].filter(Boolean).join(", ") || "-";
+const title = j.title || "-";
+const company = j.company_name || "-";
+const applyUrl = j.apply_url || "";
+const jobId = j.id || "";
+
+tr.innerHTML = `
+<td>${escapeHtml(title)}</td>
+<td>${escapeHtml(company)}</td>
+<td>${escapeHtml(loc)}</td>
+<td><span class="badge">${escapeHtml(posted)}</span></td>
+<td></td>
+`;
+
+const tdActions = tr.querySelector("td:last-child");
+
+const openBtn = document.createElement("button");
+openBtn.textContent = "Open";
+openBtn.onclick = () => {
+if (!applyUrl) { alert("No apply_url"); return; }
+window.open(applyUrl, "_blank");
+};
+
+const markBtn = document.createElement("button");
+markBtn.textContent = "Mark Applied";
+markBtn.onclick = async () => {
+try {
+const customerEmail = ($("customerEmail").value || "").trim().toLowerCase();
+if (!customerEmail) { alert("Please enter Customer Email first."); return; }
+if (!jobId) { alert("Missing job_id in row."); return; }
+const payload = {
+email: customerEmail,
+full_name: "",
+job_id: jobId,
+status: "applied",
+applied_by: "team",
+notes: ""
+};
+const res = await apiPost("/applications/mark", payload);
+setLog(res);
+await loadQueue();
+} catch (e) {
+setLog({ error: "Mark applied failed", details: String(e) });
+}
+};
+
+tdActions.appendChild(openBtn);
+tdActions.appendChild(document.createTextNode(" "));
+tdActions.appendChild(markBtn);
+
+tbody.appendChild(tr);
+}
+}
+
+function escapeHtml(s) {
+return String(s ?? "")
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
+}
+
+
+function computeRecommendedCap(queueCount){
+const q = Number(queueCount || 0);
+if(q >= 25) return { cap: 10, label: "Healthy" };
+if(q >= 5) return { cap: 5, label: "Medium" };
+return { cap: 1, label: "Low" };
+}
+
+function setFetchSummaryLine(text){
+const el = $("fetchSummary");
 if(el) el.textContent = text;
 }
 
-function setBadge(id, type, text){
-const el = document.getElementById(id);
-if(!el) return;
-el.className = "badge" + (type ? (" " + type) : "");
-el.textContent = text;
+function setCapHint(queueCount){
+const rec = computeRecommendedCap(queueCount);
+const el = $("capHint");
+if(el) el.textContent = "Recommended daily cap: " + rec.cap + "/day (" + rec.label + ") based on queue size " + Number(queueCount || 0);
 }
 
-function escapeHtml(s){
-return String(s ?? "")
-.replaceAll("&","&amp;")
-.replaceAll("<","&lt;")
-.replaceAll(">","&gt;")
-.replaceAll('"',"&quot;")
-.replaceAll("'","&#039;");
+function renderStatusSummary(data) {
+const meta = $("statusMeta");
+const kpis = $("statusKpis");
+
+if (!data || !data.ok) {
+meta.textContent = "Failed to load status overview.";
+kpis.innerHTML = "";
+kpis.style.display = "none";
+return;
 }
 
-function nowStamp(){
-return new Date().toISOString().replace("T"," ").replace("Z"," UTC");
+const counts = data.counts || {};
+const total = Number(data.total || 0);
+
+const get = (k) => Number(counts[k] || 0);
+const newCount = get("new");
+const applied = get("applied");
+const shortlisted = get("shortlisted");
+const skipped = get("skipped");
+const rejected = get("rejected");
+const expired = get("expired");
+
+meta.textContent = `Customer: ${data.customer_id} · Total tracked: ${total}`;
+kpis.style.display = "flex";
+kpis.innerHTML = `
+<div class="kpi">New <b>${newCount}</b></div>
+<div class="kpi">Applied <b>${applied}</b></div>
+<div class="kpi">Shortlisted <b>${shortlisted}</b></div>
+<div class="kpi">Skipped <b>${skipped}</b></div>
+<div class="kpi">Rejected <b>${rejected}</b></div>
+<div class="kpi">Expired <b>${expired}</b></div>
+`;
 }
 
-function getLocalPlan(){
-return localStorage.getItem("ja_plan") || "";
+async function loadStatusSummary() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) {
+$("statusMeta").textContent = "No customer selected.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+return;
 }
+$("statusMeta").textContent = "Loading status overview...";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
 
-async function requireSession(){
-const { data, error } = await supabaseClient.auth.getSession();
-if(error) throw error;
-if(!data || !data.session){
-window.location.replace("./signup.html");
-return null;
-}
-return data.session;
-}
-
-async function apiGet(path, accessToken){
-const res = await fetch(API_BASE + path, {
-method: "GET",
-headers: { "Authorization": "Bearer " + accessToken }
-});
-const text = await res.text().catch(()=> "");
-let json = null;
-try{ json = JSON.parse(text); }catch{ json = { raw: text }; }
-if(!res.ok){
-const msg = (json && (json.error || json.details)) ? (json.error || json.details) : text;
-throw new Error(path + " failed: " + res.status + " " + msg);
-}
-return json;
-}
-
-function renderQueueTable(queue){
-const items = Array.isArray(queue?.data) ? queue.data : [];
-if(items.length === 0){
-return '<span class="badge warn">No jobs in queue</span>';
-}
-const rows = items.slice(0, 15).map(j => {
-const title = j.title || "Untitled";
-const company = j.company_name || "—";
-const city = j.city || "—";
-const country = j.country || "—";
-const posted = j.posted_at ? String(j.posted_at).slice(0,10) : "—";
-const link = j.apply_url ? String(j.apply_url) : "";
-const titleCell = link
-? '<a href="' + escapeHtml(link) + '" target="_blank" rel="noopener">' + escapeHtml(title) + '</a>'
-: escapeHtml(title);
-
-return "<tr>" +
-"<td>" + titleCell + "</td>" +
-"<td>" + escapeHtml(company) + "</td>" +
-"<td>" + escapeHtml(city) + "</td>" +
-"<td>" + escapeHtml(country) + "</td>" +
-"<td>" + escapeHtml(posted) + "</td>" +
-"</tr>";
-}).join("");
-
-return '' +
-'<table class="table">' +
-'<thead><tr><th>Title</th><th>Company</th><th>City</th><th>Country</th><th>Posted</th></tr></thead>' +
-'<tbody>' + rows + '</tbody>' +
-'</table>' +
-'<div class="small" style="margin-top:10px">Showing ' + Math.min(items.length, 15) + ' of ' + items.length + ' jobs</div>';
-}
-
-function renderAppsBreakdown(summary){
-const counts = summary && summary.counts ? summary.counts : null;
-if(!counts || typeof counts !== "object"){
-return '<span class="badge warn">Not available</span>';
-}
-const entries = Object.entries(counts);
-if(entries.length === 0){
-return '<span class="badge warn">No applications yet</span>';
-}
-entries.sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
-const rows = entries.map(([k,v]) => {
-return "<tr><td>" + escapeHtml(k) + "</td><td>" + escapeHtml(v) + "</td></tr>";
-}).join("");
-return '' +
-'<table class="table">' +
-'<thead><tr><th>Status</th><th>Count</th></tr></thead>' +
-'<tbody>' + rows + '</tbody>' +
-'</table>';
-}
-
-async function loadDashboard(){
-setText("errorBox", "");
-setText("lastCheck", nowStamp());
-
-setBadge("badgeQueue", "", "Loading");
-setBadge("badgeApps", "", "Loading");
-
-const session = await requireSession();
-if(!session) return;
-
-const email = session.user && session.user.email ? session.user.email : "—";
-setText("meEmail", email);
-setText("subLine", "Signed in as " + email);
-
-const plan = getLocalPlan();
-setText("kpiPlan", plan ? plan : "–");
-setBadge("badgePlan", plan ? "good" : "warn", plan ? "Selected" : "Not selected");
-
-const queue = await apiGet("/me/jobs/queue", session.access_token);
-setText("meCustomerId", queue && queue.customer_id ? queue.customer_id : "—");
-const qCount = typeof queue.count === "number" ? queue.count : (Array.isArray(queue.data) ? queue.data.length : 0);
-setText("kpiQueue", String(qCount));
-setBadge("badgeQueue", "good", "OK");
-document.getElementById("queueWrap").innerHTML = renderQueueTable(queue);
-
-try{
-const apps = await apiGet("/me/applications/summary", session.access_token);
-setText("kpiAppsTotal", (typeof apps.total === "number") ? String(apps.total) : "0");
-setBadge("badgeApps", "good", "OK");
-document.getElementById("appsBreakdown").innerHTML = renderAppsBreakdown(apps);
-}catch(e){
-setText("kpiAppsTotal", "–");
-setBadge("badgeApps", "warn", "Not ready");
-document.getElementById("appsBreakdown").innerHTML = '<span class="badge warn">Endpoint not available</span>';
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/applications/summary`);
+renderStatusSummary(res);
+} catch (e) {
+$("statusMeta").textContent = "Failed to load status overview.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
 }
 }
 
-document.getElementById("btnRefresh").addEventListener("click", async () => {
-try{ await loadDashboard(); }
-catch(e){ setText("errorBox", e.message); setBadge("badgeQueue","warn","Error"); }
-});
+async function healthCheck() {
+try {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+if (!apiBase) throw new Error("Missing API Base URL");
+const res = await fetch(apiBase + "/health");
+const data = await res.json();
+setLog(data);
+} catch (e) {
+setLog({ error: "Health check failed", details: String(e) });
+}
+}
 
-document.getElementById("btnCopyToken").addEventListener("click", async () => {
-const { data } = await supabaseClient.auth.getSession();
-const token = data && data.session ? data.session.access_token : "";
-if(!token){ alert("No session token found. Please sign in again."); return; }
-await navigator.clipboard.writeText(token);
-alert("Access token copied.");
-});
+async function findCustomer() {
+try {
+const email = ($("customerEmail").value || "").trim().toLowerCase();
+if (!email) { alert("Please enter customer email"); return; }
 
-document.getElementById("btnLogout").addEventListener("click", async () => {
-await supabaseClient.auth.signOut();
-window.location.replace("./index.html");
-});
+const res = await apiGet(`/customers/search?email=${encodeURIComponent(email)}`);
+setLog(res);
 
-window.addEventListener("load", async () => {
-try{ await loadDashboard(); }
-catch(e){ setText("errorBox", e.message); setBadge("badgeQueue","warn","Error"); setBadge("badgeApps","warn","Error"); }
-});
+if (!res.found) {
+alert("Customer not found. Create the customer first.");
+return;
+}
+
+$("customerId").value = res.customer.id;
+saveNow();
+await loadStatusSummary();
+alert("Customer found. customer_id filled.");
+} catch (e) {
+setLog({ error: "Find customer failed", details: String(e) });
+}
+}
+
+async function fetchJobs(force=false) {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+setFetchSummaryLine("Fetching…");
+const qs = force ? "?force=true" : "";
+const res = await apiPost(`/customers/${encodeURIComponent(customerId)}/fetch-jobs${qs}`, {});
+setLog(res);
+
+// After fetch, reload queue to get current size
+const q = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
+renderJobs(q);
+await loadStatusSummary();
+
+const added = Number(res?.queued_count ?? res?.total_jobs_added ?? 0);
+const lvl = res?.match_level ?? "—";
+const rkm = res?.radius_km_used ?? "—";
+const fetched = res?.total_fetched ?? "—";
+const qCount = (q && q.data) ? q.data.length : 0;
+
+setFetchSummaryLine(`Last fetch: added ${added} | match_level ${lvl} | radius ${rkm}km | BA fetched ${fetched} | queue now ${qCount}`);
+setCapHint(qCount);
+} catch (e) {
+setLog({ error: "Fetch jobs failed", details: String(e) });
+setFetchSummaryLine("Fetch failed: " + String(e));
+}
+}
+
+async function loadQueue() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
+setLog(res);
+renderJobs(res);
+await loadStatusSummary();
+} catch (e) {
+setLog({ error: "Load queue failed", details: String(e) });
+}
+}
+
+$("saveConfig").addEventListener("click", saveNow);
+$("clearConfig").addEventListener("click", clearNow);
+$("healthCheck").addEventListener("click", healthCheck);
+$("fetchJobs").addEventListener("click", () => fetchJobs(false));
+$("forceFetch").addEventListener("click", () => fetchJobs(true));
+$("loadQueue").addEventListener("click", loadQueue);
+$("findCustomer").addEventListener("click", findCustomer);
+
+loadSaved();
+loadStatusSummary();
 </script>
-
 </body>
 </html>
