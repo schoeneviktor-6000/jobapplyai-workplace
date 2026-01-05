@@ -14,7 +14,7 @@ h3 { margin: 0 0 10px; font-size: 14px; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
 label { display: block; font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; }
+input, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; background: #fff; }
 button { border: 1px solid #ddd; background: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 650; }
 button:hover { background: #f2f2f2; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
@@ -71,6 +71,22 @@ This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in
 <input id="customerEmail" placeholder="demo.customer+001@gmail.com">
 </div>
 </div>
+
+<div class="row" style="margin-top:12px;">
+<div>
+<label>Default Application Channel (for Mark Applied)</label>
+<select id="defaultChannel">
+<option value="email_manual">email_manual (JobApplyAI team)</option>
+<option value="email_gmail">email_gmail (customer Gmail)</option>
+<option value="career_portal">career_portal</option>
+</select>
+</div>
+<div>
+<label>Default From Email (optional, for credibility tracking)</label>
+<input id="defaultFromEmail" placeholder="e.g. applications@jobapply-ai.com">
+</div>
+</div>
+
 <div class="actions">
 <button id="findCustomer">Find Customer by Email</button>
 <button id="fetchJobs">Fetch Jobs (daily protected)</button>
@@ -78,6 +94,7 @@ This UI talks to your Cloudflare Worker API. Do not hardcode your admin token in
 <button id="loadQueue">Load Queue</button>
 </div>
 <div class="small">Fetch Jobs will return “Jobs already fetched today” if you click again on the same day. Force Fetch ignores the daily lock (testing only).</div>
+<div class="small" style="margin-top:6px;">Identity note: when you mark Applied, the system logs a <b>sent</b> event with channel + from_email (no Gmail OAuth needed).</div>
 </div>
 
 <div class="card">
@@ -137,6 +154,8 @@ if (saved.apiBase) $("apiBase").value = saved.apiBase;
 if (saved.token) $("adminToken").value = saved.token;
 if (saved.customerId) $("customerId").value = saved.customerId;
 if (saved.customerEmail) $("customerEmail").value = saved.customerEmail;
+if (saved.defaultChannel) $("defaultChannel").value = saved.defaultChannel;
+if (saved.defaultFromEmail) $("defaultFromEmail").value = saved.defaultFromEmail;
 }
 
 function saveNow() {
@@ -144,7 +163,9 @@ const data = {
 apiBase: ($("apiBase").value || "").trim().replace(/\/$/, ""),
 token: ($("adminToken").value || "").trim(),
 customerId: ($("customerId").value || "").trim(),
-customerEmail: ($("customerEmail").value || "").trim()
+customerEmail: ($("customerEmail").value || "").trim(),
+defaultChannel: ($("defaultChannel").value || "").trim(),
+defaultFromEmail: ($("defaultFromEmail").value || "").trim()
 };
 localStorage.setItem("jobapplyai_workplace", JSON.stringify(data));
 setLog({ ok: true, message: "Saved to localStorage (only in your browser)." });
@@ -156,6 +177,8 @@ $("apiBase").value = "";
 $("adminToken").value = "";
 $("customerId").value = "";
 $("customerEmail").value = "";
+$("defaultChannel").value = "email_manual";
+$("defaultFromEmail").value = "";
 $("jobsTbody").innerHTML = "";
 $("queueMeta").textContent = "No data loaded yet.";
 $("statusMeta").textContent = "No customer selected.";
@@ -186,6 +209,12 @@ let data = null;
 try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
 if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}`);
 return data;
+}
+
+function looksLikeEmail(email) {
+const s = String(email || "").trim();
+if (!s) return false;
+return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 }
 
 function renderJobs(queue) {
@@ -226,16 +255,32 @@ try {
 const customerEmail = ($("customerEmail").value || "").trim().toLowerCase();
 if (!customerEmail) { alert("Please enter Customer Email first."); return; }
 if (!jobId) { alert("Missing job_id in row."); return; }
+
+const channel = ($("defaultChannel").value || "email_manual").trim();
+const fromEmail = ($("defaultFromEmail").value || "").trim();
+
+if (fromEmail && !looksLikeEmail(fromEmail)) {
+alert("Default From Email is not a valid email. Please fix it or leave it empty.");
+return;
+}
+
 const payload = {
 email: customerEmail,
 full_name: "",
 job_id: jobId,
 status: "applied",
 applied_by: "team",
-notes: ""
+notes: "",
+application_channel: channel,
+from_email: fromEmail || null
 };
+
+setLog({ info: "Marking applied with identity", payload });
+
 const res = await apiPost("/applications/mark", payload);
 setLog(res);
+
+saveNow();
 await loadQueue();
 } catch (e) {
 setLog({ error: "Mark applied failed", details: String(e) });
@@ -258,7 +303,6 @@ return String(s ?? "")
 .replace(/"/g, "&quot;")
 .replace(/'/g, "&#039;");
 }
-
 
 function computeRecommendedCap(queueCount){
 const q = Number(queueCount || 0);
@@ -377,7 +421,6 @@ const qs = force ? "?force=true" : "";
 const res = await apiPost(`/customers/${encodeURIComponent(customerId)}/fetch-jobs${qs}`, {});
 setLog(res);
 
-// After fetch, reload queue to get current size
 const q = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
 renderJobs(q);
 await loadStatusSummary();
@@ -416,6 +459,10 @@ $("fetchJobs").addEventListener("click", () => fetchJobs(false));
 $("forceFetch").addEventListener("click", () => fetchJobs(true));
 $("loadQueue").addEventListener("click", loadQueue);
 $("findCustomer").addEventListener("click", findCustomer);
+
+// Persist identity fields when changed
+$("defaultChannel").addEventListener("change", saveNow);
+$("defaultFromEmail").addEventListener("blur", saveNow);
 
 loadSaved();
 loadStatusSummary();
