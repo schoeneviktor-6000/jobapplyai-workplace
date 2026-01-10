@@ -4,230 +4,126 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>JobMeJob · Workplace</title>
-
 <style>
-body {
-font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-margin: 0;
-background: #f6f7fb;
-color: #111;
-}
-
-.container {
-max-width: 1100px;
-margin: 0 auto;
-padding: 18px;
-}
-
-.card {
-background: #fff;
-border-radius: 14px;
-padding: 16px;
-box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-margin-bottom: 14px;
-}
-
-h1 { margin: 0 0 6px; font-size: 22px; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f6f7fb; color: #111; }
+.container { max-width: 1100px; margin: 0 auto; padding: 18px; }
+.card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 14px; }
+h1 { margin: 0 0 8px; font-size: 22px; }
 h2 { margin: 0 0 10px; font-size: 16px; }
-h3 { margin: 0 0 8px; font-size: 14px; }
-
-.small {
-font-size: 12px;
-opacity: .75;
-}
-
-.row {
-display: grid;
-grid-template-columns: 1fr 1fr;
-gap: 12px;
-}
-
-@media (max-width: 820px) {
-.row { grid-template-columns: 1fr; }
-}
-
-label {
-display: block;
-font-size: 12px;
-opacity: .75;
-margin-bottom: 6px;
-}
-
-input, select {
-width: 100%;
-padding: 10px 12px;
-border-radius: 10px;
-border: 1px solid #ddd;
-font-size: 14px;
-background: #fff;
-}
-
-button {
-border: 1px solid #ddd;
-background: #fff;
-padding: 10px 12px;
-border-radius: 10px;
-cursor: pointer;
-font-weight: 650;
-}
-
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 820px) { .row { grid-template-columns: 1fr; } }
+label { display: block; font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
+input, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; background: #fff; }
+button { border: 1px solid #ddd; background: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 650; }
 button:hover { background: #f2f2f2; }
-
-.actions {
-display: flex;
-flex-wrap: wrap;
-gap: 10px;
-margin-top: 10px;
-}
-
-.status {
-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-white-space: pre-wrap;
-background: #0b1020;
-color: #e6e6e6;
-padding: 12px;
-border-radius: 12px;
-overflow: auto;
-font-size: 12px;
-}
-
-table {
-width: 100%;
-border-collapse: collapse;
-}
-
-th, td {
-text-align: left;
-padding: 10px 8px;
-border-bottom: 1px solid #eee;
-vertical-align: top;
-font-size: 13px;
-}
-
-th {
-opacity: .7;
-font-size: 12px;
-}
-
-.badge {
-display: inline-block;
-padding: 4px 8px;
-border: 1px solid #ddd;
-border-radius: 999px;
-font-size: 12px;
-}
-
-.kpiRow {
-display: flex;
-flex-wrap: wrap;
-gap: 8px;
-margin-top: 6px;
-}
-
-.kpi {
-display: inline-flex;
-gap: 6px;
-align-items: center;
-padding: 6px 10px;
-border: 1px solid #ddd;
-border-radius: 999px;
-font-size: 12px;
-}
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.small { font-size: 12px; opacity: 0.75; }
+.status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; white-space: pre-wrap; background: #0b1020; color: #e6e6e6; padding: 12px; border-radius: 12px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+th { font-size: 12px; opacity: 0.75; }
+td { font-size: 14px; }
+.badge { display: inline-block; padding: 4px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+.kpiRow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.kpi { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+.kpi b { font-size: 12px; }
+.warn { border-color: #f1d2a8; background: #fff7ea; }
+.danger { border-color: #f0b4b4; background: #fff0f0; }
+.headerRow { display:flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rightActions { display:flex; gap: 10px; flex-wrap: wrap; }
 </style>
 </head>
-
 <body>
 <div class="container">
 
 <div class="card">
+<div class="headerRow">
+<div>
 <h1>JobMeJob Workplace</h1>
-<div class="small">
-Internal team interface for managing customers, job queues, and application tracking.
-Requires admin access. No customer-facing usage.
+<div class="small">Internal team interface to fetch jobs, review queue, and mark application status. Requires admin token.</div>
+</div>
+<div class="rightActions">
+<button id="copyLog">Copy Log</button>
+</div>
 </div>
 </div>
 
 <div class="card">
-<h2>1. Configuration</h2>
+<h2>1) Configuration</h2>
 <div class="row">
 <div>
 <label>API Base URL</label>
-<input id="apiBase" placeholder="https://api.jobmejob.com">
+<input id="apiBase" placeholder="https://jobmejob-api.yourdomain.workers.dev">
 </div>
 <div>
-<label>Admin Token</label>
-<input id="adminToken" type="password" placeholder="Paste admin token">
+<label>Admin Token (x-admin-token)</label>
+<input id="adminToken" type="password" placeholder="Paste token here">
 </div>
 </div>
-
 <div class="actions">
-<button id="saveConfig">Save configuration</button>
-<button id="clearConfig">Clear local config</button>
-<button id="healthCheck">API health check</button>
+<button id="saveConfig">Save Config</button>
+<button id="clearConfig">Clear</button>
+<button id="healthCheck">Health Check</button>
 </div>
-
-<div class="small" style="margin-top:6px;">
-Config is stored only in your browser (localStorage).
-</div>
+<div class="small">Saved only in this browser via localStorage.</div>
 </div>
 
 <div class="card">
-<h2>2. Customer</h2>
+<h2>2) Customer</h2>
 <div class="row">
 <div>
 <label>Customer ID (UUID)</label>
-<input id="customerId" placeholder="UUID">
+<input id="customerId" placeholder="213f6290-fe25-4168-8b57-82395747f4c7">
 </div>
 <div>
 <label>Customer Email</label>
-<input id="customerEmail" placeholder="customer@email.com">
+<input id="customerEmail" placeholder="demo.customer+001@gmail.com">
 </div>
 </div>
 
 <div class="row" style="margin-top:12px;">
 <div>
-<label>Application Channel</label>
+<label>Default Application Channel (for Mark Applied)</label>
 <select id="defaultChannel">
 <option value="email_manual">email_manual (team)</option>
-<option value="email_gmail">email_gmail (customer)</option>
+<option value="email_gmail">email_gmail (customer Gmail)</option>
 <option value="career_portal">career_portal</option>
 </select>
 </div>
 <div>
-<label>From Email (optional)</label>
+<label>Default From Email (optional)</label>
 <input id="defaultFromEmail" placeholder="applications@jobmejob.com">
 </div>
 </div>
 
 <div class="actions">
-<button id="findCustomer">Find customer by email</button>
-<button id="loadQueue">Load job queue</button>
-</div>
+<button id="findCustomer">Find Customer by Email</button>
+<button id="loadQueue">Load Queue</button>
 </div>
 
-<div class="card">
-<h2>3. Job Fetching</h2>
+<div class="small" style="margin-top:6px;">Find Customer uses the API endpoint: /customers/search?email=...</div>
+</div>
+
+<div class="card warn">
+<h2>3) Job Fetching</h2>
 <div class="actions">
-<button id="fetchJobs">Fetch jobs (daily)</button>
-<button id="forceFetch">Force fetch (testing only)</button>
+<button id="fetchJobs">Fetch Jobs (daily protected)</button>
+<button id="forceFetch">Force Fetch (testing only)</button>
 </div>
-<div class="small" style="margin-top:6px;">
-Force fetch ignores daily protection. Use only for debugging.
-</div>
-<div class="small" id="fetchSummary" style="margin-top:6px;">—</div>
-<div class="small" id="capHint">—</div>
+<div class="small" style="margin-top:6px;">Force Fetch ignores daily lock.</div>
+<div class="small" id="fetchSummary" style="margin-top:8px;opacity:.85">—</div>
+<div class="small" id="capHint" style="margin-top:6px;opacity:.85">Recommended daily cap: —</div>
 </div>
 
 <div class="card">
-<h2>4. Status Overview</h2>
+<h2>4) Status overview</h2>
 <div class="small" id="statusMeta">No customer selected.</div>
 <div class="kpiRow" id="statusKpis" style="display:none"></div>
 </div>
 
 <div class="card">
-<h2>5. Job Queue</h2>
-<div class="small" id="queueMeta">No data loaded.</div>
-
+<h2>5) Job Queue</h2>
+<div class="small" id="queueMeta">No data loaded yet.</div>
 <div style="overflow:auto; margin-top:10px;">
 <table>
 <thead>
@@ -252,141 +148,347 @@ Force fetch ignores daily protection. Use only for debugging.
 </div>
 
 <script>
-const $ = id => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 
-function log(x){ $("log").textContent = typeof x === "string" ? x : JSON.stringify(x,null,2); }
+function setLog(obj) {
+const text = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+$("log").textContent = text;
+}
 
-function getCfg(){
-return {
-api: $("apiBase").value.trim().replace(/\/$/,""),
-token: $("adminToken").value.trim()
+function appendLog(line) {
+const cur = $("log").textContent || "";
+$("log").textContent = (cur ? cur + "\n\n" : "") + String(line);
+}
+
+function getConfig() {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+const token = ($("adminToken").value || "").trim();
+return { apiBase, token };
+}
+
+function authHeaders(token) {
+return { "x-admin-token": token, "Content-Type": "application/json" };
+}
+
+function loadSaved() {
+const saved = JSON.parse(localStorage.getItem("jobmejob_workplace") || "{}");
+if (saved.apiBase) $("apiBase").value = saved.apiBase;
+if (saved.token) $("adminToken").value = saved.token;
+if (saved.customerId) $("customerId").value = saved.customerId;
+if (saved.customerEmail) $("customerEmail").value = saved.customerEmail;
+if (saved.defaultChannel) $("defaultChannel").value = saved.defaultChannel;
+if (saved.defaultFromEmail) $("defaultFromEmail").value = saved.defaultFromEmail;
+}
+
+function saveNow() {
+const data = {
+apiBase: ($("apiBase").value || "").trim().replace(/\/$/, ""),
+token: ($("adminToken").value || "").trim(),
+customerId: ($("customerId").value || "").trim(),
+customerEmail: ($("customerEmail").value || "").trim(),
+defaultChannel: ($("defaultChannel").value || "").trim(),
+defaultFromEmail: ($("defaultFromEmail").value || "").trim()
 };
+localStorage.setItem("jobmejob_workplace", JSON.stringify(data));
+setLog({ ok: true, message: "Saved to localStorage (only in your browser)." });
 }
 
-function headers(){
-return {
-"x-admin-token": getCfg().token,
-"Content-Type": "application/json"
-};
-}
-
-function saveCfg(){
-localStorage.setItem("jobmejob_workplace", JSON.stringify({
-api: $("apiBase").value,
-token: $("adminToken").value,
-cid: $("customerId").value,
-email: $("customerEmail").value,
-channel: $("defaultChannel").value,
-from: $("defaultFromEmail").value
-}));
-log("Configuration saved locally.");
-}
-
-function loadCfg(){
-const d = JSON.parse(localStorage.getItem("jobmejob_workplace")||"{}");
-if(d.api) $("apiBase").value=d.api;
-if(d.token) $("adminToken").value=d.token;
-if(d.cid) $("customerId").value=d.cid;
-if(d.email) $("customerEmail").value=d.email;
-if(d.channel) $("defaultChannel").value=d.channel;
-if(d.from) $("defaultFromEmail").value=d.from;
-}
-
-function clearCfg(){
+function clearNow() {
 localStorage.removeItem("jobmejob_workplace");
-location.reload();
+$("apiBase").value = "";
+$("adminToken").value = "";
+$("customerId").value = "";
+$("customerEmail").value = "";
+$("defaultChannel").value = "email_manual";
+$("defaultFromEmail").value = "";
+$("jobsTbody").innerHTML = "";
+$("queueMeta").textContent = "No data loaded yet.";
+$("statusMeta").textContent = "No customer selected.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+$("fetchSummary").textContent = "—";
+$("capHint").textContent = "Recommended daily cap: —";
+setLog("Cleared.");
 }
 
-async function apiGet(p){
-const r=await fetch(getCfg().api+p,{headers:headers()});
-const t=await r.text();
-if(!r.ok) throw t;
-return t?JSON.parse(t):{};
+async function apiGet(path) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "GET", headers: authHeaders(token) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}: ${text}`);
+return data;
 }
 
-async function apiPost(p,b){
-const r=await fetch(getCfg().api+p,{method:"POST",headers:headers(),body:JSON.stringify(b||{})});
-const t=await r.text();
-if(!r.ok) throw t;
-return t?JSON.parse(t):{};
+async function apiPost(path, bodyObj) {
+const { apiBase, token } = getConfig();
+if (!apiBase) throw new Error("Missing API Base URL");
+if (!token) throw new Error("Missing Admin Token");
+const res = await fetch(apiBase + path, { method: "POST", headers: authHeaders(token), body: JSON.stringify(bodyObj || {}) });
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+if (!res.ok) throw new Error((data && (data.error || data.details)) ? JSON.stringify(data) : `HTTP ${res.status}: ${text}`);
+return data;
 }
 
-$("saveConfig").onclick=saveCfg;
-$("clearConfig").onclick=clearCfg;
+function looksLikeEmail(email) {
+const s = String(email || "").trim();
+if (!s) return false;
+return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
 
-$("healthCheck").onclick=async()=>{
-try{ log(await (await fetch(getCfg().api+"/health")).json()); }
-catch(e){ log(e); }
+function escapeHtml(s) {
+return String(s ?? "")
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
+}
+
+function computeRecommendedCap(queueCount){
+const q = Number(queueCount || 0);
+if(q >= 25) return { cap: 10, label: "Healthy" };
+if(q >= 5) return { cap: 5, label: "Medium" };
+return { cap: 1, label: "Low" };
+}
+
+function setCapHint(queueCount){
+const rec = computeRecommendedCap(queueCount);
+$("capHint").textContent = "Recommended daily cap: " + rec.cap + "/day (" + rec.label + ") based on queue size " + Number(queueCount || 0);
+}
+
+function renderJobs(queue) {
+const tbody = $("jobsTbody");
+tbody.innerHTML = "";
+const jobs = (queue && queue.data) ? queue.data : [];
+$("queueMeta").textContent = `Loaded ${jobs.length} jobs. Customer: ${queue.customer_id || "-"}`;
+
+for (const j of jobs) {
+const tr = document.createElement("tr");
+const posted = j.posted_at ? String(j.posted_at).slice(0, 10) : "-";
+const loc = [j.city, j.country].filter(Boolean).join(", ") || "-";
+const title = j.title || "-";
+const company = j.company_name || "-";
+const applyUrl = j.apply_url || "";
+const jobId = j.id || "";
+
+tr.innerHTML = `
+<td>${escapeHtml(title)}</td>
+<td>${escapeHtml(company)}</td>
+<td>${escapeHtml(loc)}</td>
+<td><span class="badge">${escapeHtml(posted)}</span></td>
+<td></td>
+`;
+
+const tdActions = tr.querySelector("td:last-child");
+
+const openBtn = document.createElement("button");
+openBtn.textContent = "Open";
+openBtn.onclick = () => {
+if (!applyUrl) { alert("No apply_url"); return; }
+window.open(applyUrl, "_blank");
 };
 
-$("findCustomer").onclick=async()=>{
-try{
-const r=await apiGet("/customers/search?email="+encodeURIComponent($("customerEmail").value));
-if(!r.found) return alert("Customer not found");
-$("customerId").value=r.customer.id;
-saveCfg();
-alert("Customer loaded");
-}catch(e){log(e);}
+const markBtn = document.createElement("button");
+markBtn.textContent = "Mark Applied";
+markBtn.onclick = async () => {
+try {
+const customerId = ($("customerId").value || "").trim();
+const customerEmail = ($("customerEmail").value || "").trim().toLowerCase();
+if (!customerId) { alert("Please enter Customer ID first."); return; }
+if (!customerEmail) { alert("Please enter Customer Email first."); return; }
+if (!jobId) { alert("Missing job_id in row."); return; }
+
+const channel = ($("defaultChannel").value || "email_manual").trim();
+const fromEmail = ($("defaultFromEmail").value || "").trim();
+
+if (fromEmail && !looksLikeEmail(fromEmail)) {
+alert("Default From Email is not a valid email. Fix it or leave it empty.");
+return;
+}
+
+const payload = {
+email: customerEmail,
+full_name: "",
+job_id: jobId,
+status: "applied",
+applied_by: "team",
+notes: "",
+application_channel: channel,
+from_email: fromEmail || null
 };
 
-$("fetchJobs").onclick=()=>fetchJobs(false);
-$("forceFetch").onclick=()=>fetchJobs(true);
-
-async function fetchJobs(force){
-try{
-const id=$("customerId").value.trim();
-if(!id) return alert("Missing customer ID");
-const r=await apiPost(`/customers/${id}/fetch-jobs${force?"?force=true":""}`,{});
-log(r);
+setLog({ info: "Marking applied", payload });
+const res = await apiPost("/applications/mark", payload);
+setLog(res);
+saveNow();
 await loadQueue();
-}catch(e){log(e);}
+} catch (e) {
+setLog({ error: "Mark applied failed", details: String(e) });
+}
+};
+
+tdActions.appendChild(openBtn);
+tdActions.appendChild(document.createTextNode(" "));
+tdActions.appendChild(markBtn);
+
+tbody.appendChild(tr);
+}
 }
 
-async function loadQueue(){
-try{
-const id=$("customerId").value.trim();
-const q=await apiGet(`/customers/${id}/jobs/queue`);
-$("queueMeta").textContent=`Loaded ${q.data.length} jobs`;
-const tb=$("jobsTbody"); tb.innerHTML="";
-q.data.forEach(j=>{
-const tr=document.createElement("tr");
-tr.innerHTML=`
-<td>${j.title||"-"}</td>
-<td>${j.company_name||"-"}</td>
-<td>${[j.city,j.country].filter(Boolean).join(", ")}</td>
-<td><span class="badge">${(j.posted_at||"").slice(0,10)}</span></td>
-<td></td>`;
-const a=tr.lastElementChild;
-const o=document.createElement("button");
-o.textContent="Open";
-o.onclick=()=>window.open(j.apply_url,"_blank");
-const m=document.createElement("button");
-m.textContent="Mark applied";
-m.onclick=()=>markApplied(j.id);
-a.append(o," ",m);
-tb.appendChild(tr);
+function renderStatusSummary(data) {
+const meta = $("statusMeta");
+const kpis = $("statusKpis");
+
+if (!data || !data.ok) {
+meta.textContent = "Failed to load status overview.";
+kpis.innerHTML = "";
+kpis.style.display = "none";
+return;
+}
+
+const counts = data.counts || {};
+const total = Number(data.total || 0);
+const get = (k) => Number(counts[k] || 0);
+
+meta.textContent = `Customer: ${data.customer_id} · Total tracked: ${total}`;
+kpis.style.display = "flex";
+kpis.innerHTML = `
+<div class="kpi">New <b>${get("new")}</b></div>
+<div class="kpi">Applied <b>${get("applied")}</b></div>
+<div class="kpi">Shortlisted <b>${get("shortlisted")}</b></div>
+<div class="kpi">Skipped <b>${get("skipped")}</b></div>
+<div class="kpi">Rejected <b>${get("rejected")}</b></div>
+<div class="kpi">Expired <b>${get("expired")}</b></div>
+`;
+}
+
+async function loadStatusSummary() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) {
+$("statusMeta").textContent = "No customer selected.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+return;
+}
+$("statusMeta").textContent = "Loading status overview...";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/applications/summary`);
+renderStatusSummary(res);
+} catch (e) {
+$("statusMeta").textContent = "Failed to load status overview.";
+$("statusKpis").innerHTML = "";
+$("statusKpis").style.display = "none";
+appendLog("Status summary error: " + String(e));
+}
+}
+
+async function healthCheck() {
+try {
+const apiBase = ($("apiBase").value || "").trim().replace(/\/$/, "");
+if (!apiBase) throw new Error("Missing API Base URL");
+const res = await fetch(apiBase + "/health");
+const text = await res.text();
+let data = null;
+try { data = text ? JSON.parse(text) : { raw: text }; } catch { data = { raw: text }; }
+setLog({ ok: res.ok, status: res.status, data });
+} catch (e) {
+setLog({ error: "Health check failed", details: String(e) });
+}
+}
+
+async function findCustomer() {
+try {
+const email = ($("customerEmail").value || "").trim().toLowerCase();
+if (!email) { alert("Please enter customer email"); return; }
+setLog({ info: "Searching customer by email", email });
+const res = await apiGet(`/customers/search?email=${encodeURIComponent(email)}`);
+setLog(res);
+
+if (!res.found) {
+alert("Customer not found. Create the customer first.");
+return;
+}
+
+$("customerId").value = res.customer.id;
+saveNow();
+await loadStatusSummary();
+alert("Customer found. Customer ID filled.");
+} catch (e) {
+setLog({ error: "Find customer failed", details: String(e) });
+}
+}
+
+async function fetchJobs(force=false) {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+$("fetchSummary").textContent = "Fetching…";
+const qs = force ? "?force=true" : "";
+const res = await apiPost(`/customers/${encodeURIComponent(customerId)}/fetch-jobs${qs}`, {});
+setLog(res);
+
+const q = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
+renderJobs(q);
+await loadStatusSummary();
+
+const added = Number(res?.queued_count ?? res?.total_jobs_added ?? 0);
+const lvl = res?.match_level ?? "—";
+const rkm = res?.radius_km_used ?? "—";
+const fetched = res?.total_fetched ?? "—";
+const qCount = (q && q.data) ? q.data.length : 0;
+
+$("fetchSummary").textContent = `Last fetch: added ${added} | match_level ${lvl} | radius ${rkm}km | BA fetched ${fetched} | queue now ${qCount}`;
+setCapHint(qCount);
+} catch (e) {
+setLog({ error: "Fetch jobs failed", details: String(e) });
+$("fetchSummary").textContent = "Fetch failed: " + String(e);
+}
+}
+
+async function loadQueue() {
+try {
+const customerId = ($("customerId").value || "").trim();
+if (!customerId) { alert("Please enter customer_id"); return; }
+const res = await apiGet(`/customers/${encodeURIComponent(customerId)}/jobs/queue`);
+setLog(res);
+renderJobs(res);
+await loadStatusSummary();
+const qCount = (res && res.data) ? res.data.length : 0;
+setCapHint(qCount);
+} catch (e) {
+setLog({ error: "Load queue failed", details: String(e) });
+}
+}
+
+$("saveConfig").addEventListener("click", saveNow);
+$("clearConfig").addEventListener("click", clearNow);
+$("healthCheck").addEventListener("click", healthCheck);
+$("fetchJobs").addEventListener("click", () => fetchJobs(false));
+$("forceFetch").addEventListener("click", () => fetchJobs(true));
+$("loadQueue").addEventListener("click", loadQueue);
+$("findCustomer").addEventListener("click", findCustomer);
+$("copyLog").addEventListener("click", async () => {
+try {
+await navigator.clipboard.writeText($("log").textContent || "");
+alert("Log copied.");
+} catch {
+alert("Copy failed. Your browser might block clipboard access.");
+}
 });
-}catch(e){log(e);}
-}
 
-async function markApplied(jobId){
-try{
-if(!$("customerId").value||!$("customerEmail").value)
-return alert("Customer ID and Email required");
-const r=await apiPost("/applications/mark",{
-job_id:jobId,
-email:$("customerEmail").value,
-status:"applied",
-applied_by:"team",
-application_channel:$("defaultChannel").value,
-from_email:$("defaultFromEmail").value||null
-});
-log(r);
-await loadQueue();
-}catch(e){log(e);}
-}
+$("defaultChannel").addEventListener("change", saveNow);
+$("defaultFromEmail").addEventListener("blur", saveNow);
 
-loadCfg();
+loadSaved();
+loadStatusSummary();
 </script>
 </body>
 </html>
